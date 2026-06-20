@@ -519,6 +519,119 @@ body {
 }
 
 /* ==========================================
+   ChatPage 스타일
+   ========================================== */
+.chat-page {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 120px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.chat-window {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding-bottom: 24px;
+  overflow-y: auto;
+}
+
+.chat-message {
+  display: flex;
+  width: 100%;
+}
+
+.chat-message--ai {
+  justify-content: flex-start;
+}
+
+.chat-message--user {
+  justify-content: flex-end;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  padding: 14px 18px;
+  border-radius: 20px;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-message--ai .chat-bubble {
+  background-color: var(--color-ivory);
+  color: var(--color-text-primary);
+  border-bottom-left-radius: 6px;
+}
+
+.chat-message--user .chat-bubble {
+  background-color: var(--color-sage-accent);
+  color: var(--color-white);
+  border-bottom-right-radius: 6px;
+}
+
+.chat-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 16px;
+}
+
+.voice-button {
+  pointer-events: auto;
+  width: min(360px, calc(100% - 32px));
+  max-width: 420px;
+  padding: 14px 20px;
+  font-size: var(--font-size-base);
+  background-color: var(--color-sage-accent);
+  color: var(--color-white);
+  border-radius: var(--radius-full);
+  border: none;
+  box-shadow: var(--shadow-md);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.voice-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.voice-button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .chat-page {
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 12px 100px;
+  }
+
+  .chat-bubble {
+    max-width: 88%;
+    padding: 12px 14px;
+  }
+
+  .chat-footer {
+    bottom: 18px;
+  }
+
+  .voice-button {
+    width: min(100%, calc(100% - 24px));
+  }
+}
+
+/* ==========================================
    TextInput 컴포넌트 스타일
    ========================================== */
 
