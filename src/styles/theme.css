@@ -733,6 +733,53 @@ body {
 }
 
 /* ==========================================
+   Dashboard styles
+   ========================================== */
+.dashboard-page {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 24px 16px 80px;
+}
+
+.calendar-placeholder {
+  width: 320px;
+  min-height: 360px;
+  border-radius: 12px;
+  background: rgba(168,201,142,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.calendar-inner {
+  color: var(--color-text-secondary);
+}
+
+.dashboard-main {
+  flex: 1;
+}
+
+.dashboard-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+@media (max-width: 720px) {
+  .dashboard-page {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .calendar-placeholder {
+    width: 100%;
+    min-height: 200px;
+  }
+}
+
+/* ==========================================
    TextInput 컴포넌트 스타일
    ========================================== */
 
