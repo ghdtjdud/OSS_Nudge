@@ -1,14 +1,131 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import PageLayout from '../components/PageLayout'
+import Button from '../components/Button'
+
+const QUESTION_MAP = {
+  sleepTime: {
+    text: '최근 주로 잠드는 시간은 언제인가요?',
+    options: ['22시 이전', '22 ~ 24시', '24 ~ 02시', '02시 이후']
+  },
+  sleepDuration: {
+    text: '최근 평균 수면 시간은 어느 정도인가요?',
+    options: ['4시간 미만', '4 ~ 6시간', '6 ~ 8시간', '8시간 이상']
+  },
+  mealRoutine: {
+    text: '식사는 보통 얼마나 규칙적으로 챙기시나요?',
+    options: [
+      '하루 식사가 전반적으로 불규칙하거나 두 끼 이상 자주 거름',
+      '아침/점심/저녁을 대체로 규칙적으로 챙김',
+      '아침은 가끔 거르지만 점심/저녁은 대체로 챙김',
+      '점심이나 저녁 중 한끼를 자주 거름'
+    ]
+  },
+  hasMedication: {
+    text: '정기적으로 복용하는 약이 있나요?',
+    options: ['현재는 없지만 과거에 있었음', '있음', '없음']
+  },
+  medicationTime: {
+    text: '약을 주로 언제 복용하나요?',
+    options: [
+      '하루 1회, 주로 아침',
+      '하루 1회, 주로 저녁이나 자기 전',
+      '하루 2회 이상 정해진 시간',
+      '복용 시간이 일정하지 않음'
+    ]
+  },
+  activityEnergy: {
+    text: '최근 일상 활동을 시작하는 데 드는 힘은 어느 정도 인가요?',
+    options: ['쉽게 시작함', '조금 힘듦', '많이 힘듦', '거의 시작하기 어려움']
+  }
+}
+
+function getStepsSequence(answers) {
+  const seq = ['sleepTime', 'sleepDuration', 'mealRoutine', 'hasMedication']
+  if (answers.hasMedication === '있음') seq.push('medicationTime')
+  seq.push('activityEnergy')
+  return seq
+}
 
 export default function SurveyPage() {
+  const navigate = useNavigate()
+
+  const [answers, setAnswers] = useState({
+    sleepTime: '',
+    sleepDuration: '',
+    mealRoutine: '',
+    hasMedication: '',
+    medicationTime: '',
+    activityEnergy: ''
+  })
+
+  const [stepIndex, setStepIndex] = useState(0)
+
+  const sequence = getStepsSequence(answers)
+  const currentKey = sequence[stepIndex]
+  const question = QUESTION_MAP[currentKey]
+
+  const handleSelect = (option) => {
+    const nextAnswers = { ...answers, [currentKey]: option }
+
+    // If user answered hasMedication and it's not '있음', clear medicationTime
+    if (currentKey === 'hasMedication' && option !== '있음') {
+      nextAnswers.medicationTime = ''
+    }
+
+    setAnswers(nextAnswers)
+
+    const nextSequence = getStepsSequence(nextAnswers)
+    const curPos = nextSequence.indexOf(currentKey)
+    const nextPos = curPos + 1
+
+    if (nextPos >= nextSequence.length) {
+      // finished
+      localStorage.setItem('initialSurvey', JSON.stringify(nextAnswers))
+      navigate('/chat')
+      return
+    }
+
+    setStepIndex(nextPos)
+  }
+
+  const handlePrev = () => {
+    if (stepIndex === 0) return
+    setStepIndex(stepIndex - 1)
+  }
+
   return (
     <PageLayout>
-      <div className="container">
-        <h1 className="title">설문</h1>
-        <p className="subtitle text-center">
-          당신의 이야기를 들려주세요
-        </p>
+      <div className="survey-page">
+        <div className="survey-card">
+          <div className="survey-header">
+            <div className="survey-title">설문</div>
+            <div className="survey-progress">{stepIndex + 1} / {sequence.length}</div>
+          </div>
+
+          <h2 className="survey-question">{question.text}</h2>
+
+          <div className="survey-options">
+            {question.options.map((opt) => (
+              <div key={opt} style={{ marginBottom: 8 }}>
+                <Button
+                  onClick={() => handleSelect(opt)}
+                  variant={answers[currentKey] === opt ? 'primary' : 'secondary'}
+                >
+                  {opt}
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="survey-actions" style={{ marginTop: 16 }}>
+            <Button onClick={handlePrev} variant="secondary" disabled={stepIndex === 0}>
+              이전
+            </Button>
+          </div>
+        </div>
       </div>
     </PageLayout>
   )
 }
+
