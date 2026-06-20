@@ -632,6 +632,107 @@ body {
 }
 
 /* ==========================================
+   Mission & Verify styles
+   ========================================== */
+.mission-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 80px);
+  padding: 40px 16px;
+}
+
+.mission-card {
+  width: 100%;
+  max-width: 640px;
+  background: var(--color-ivory);
+  border-radius: var(--radius-md);
+  padding: 36px 24px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.mission-text {
+  font-size: 1.25rem;
+  text-align: center;
+  white-space: pre-line;
+  color: var(--color-text-primary);
+}
+
+.mission-note {
+  margin-top: 12px;
+  font-size: 0.95rem;
+  color: var(--color-text-secondary);
+}
+
+.verify-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px 120px;
+}
+
+.verify-body {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.mission-label {
+  font-size: 1rem;
+  color: var(--color-text-secondary);
+}
+
+.webcam-placeholder {
+  width: 320px;
+  height: 240px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.webcam-inner {
+  color: var(--color-text-light);
+}
+
+.verify-status {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  background-color: rgba(232, 217, 203, 0.15);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.verify-warning {
+  width: 100%;
+  max-width: 640px;
+  margin-top: 10px;
+  color: var(--color-warning);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.verify-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* ==========================================
    TextInput 컴포넌트 스타일
    ========================================== */
 
