@@ -398,6 +398,53 @@ body {
   max-width: 900px;
 }
 
+/* ==========================================
+   BackButton 스타일 (좌상단 고정 뒤로가기 버튼)
+   ========================================== */
+.back-button {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.back-button img {
+  width: 36px;
+  height: 36px;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* 다른 요소와 겹치지 않도록 컨텐츠와 충분한 간격 확보가 필요할 수 있습니다.
+   필요 시 페이지 컨테이너에 padding-top을 추가하세요. */
+
+@media (max-width: 480px) {
+  .back-button {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    width: 44px;
+    height: 44px;
+  }
+
+  .back-button img {
+    width: 32px;
+    height: 32px;
+  }
+}
+
 .container--full {
   max-width: 100%;
 }

@@ -9,9 +9,12 @@
  * @param {string} className - 추가 CSS 클래스
  * @returns {JSX.Element}
  */
+import BackButton from './BackButton'
+
 export default function PageLayout({ children, className = '' }) {
   return (
     <div className={`page ${className}`.trim()}>
+      <BackButton />
       {children}
     </div>
   );
