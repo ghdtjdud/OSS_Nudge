@@ -3,20 +3,34 @@ import { useNavigate } from 'react-router-dom'
 import PageLayout from '../components/PageLayout'
 import TextInput from '../components/TextInput'
 import Button from '../components/Button'
+import { login, setAuthToken } from '../api'
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       alert('이메일과 비밀번호를 모두 입력해주세요.')
       return
     }
 
-    localStorage.setItem('isLoggedIn', 'true')
-    navigate('/intro')
+    try {
+      const result = await login({ email, password })
+
+      if (result.access_token) {
+        setAuthToken(result.access_token)
+      }
+
+      if (result.user) {
+        localStorage.setItem('userInfo', JSON.stringify(result.user))
+      }
+
+      navigate('/intro')
+    } catch (error) {
+      alert(error.message || '로그인에 실패했습니다.')
+    }
   }
 
   const handleSignUp = () => {
