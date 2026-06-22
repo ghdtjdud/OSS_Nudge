@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -62,6 +63,13 @@ class User(Base):
         "UserRoutineProfile",
         back_populates="user",
         uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    chat_sessions = relationship(
+        "ChatSession",
+        back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -144,3 +152,94 @@ class UserRoutineProfile(Base):
         "User",
         back_populates="routine_profile",
     )
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
+
+    user_id = Column(
+        BigInteger,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    user = relationship(
+        "User",
+        back_populates="chat_sessions",
+    )
+
+    messages = relationship(
+        "ChatMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ChatMessage.created_at",
+    )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
+
+    session_id = Column(
+        BigInteger,
+        ForeignKey(
+            "chat_sessions.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # user 또는 assistant
+    role = Column(
+        String(20),
+        nullable=False,
+    )
+
+    content = Column(
+        Text,
+        nullable=False,
+    )
+
+    # text 또는 voice
+    input_type = Column(
+        String(20),
+        nullable=False,
+        default="text",
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    session = relationship(
+        "ChatSession",
+        back_populates="messages",
+    )
+
+    

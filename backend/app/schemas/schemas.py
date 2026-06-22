@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import (
     BaseModel,
@@ -291,3 +291,75 @@ class UserRoutineResponse(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+# =========================================================
+# 채팅 관련 스키마
+# =========================================================
+
+class ChatInputType(str, Enum):
+    TEXT = "text"
+    VOICE = "voice"
+
+
+class ChatRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class ChatSessionResponse(BaseModel):
+    id: int
+    user_id: int
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class ChatMessageRequest(BaseModel):
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+    )
+
+    input_type: ChatInputType = ChatInputType.TEXT
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(
+        cls,
+        value: str,
+    ) -> str:
+        normalized_content = value.strip()
+
+        if not normalized_content:
+            raise ValueError(
+                "메시지 내용을 입력해주세요."
+            )
+
+        return normalized_content
+
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    session_id: int
+    role: ChatRole
+    content: str
+    input_type: ChatInputType
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class ChatReplyResponse(BaseModel):
+    session_id: int
+    user_message: ChatMessageResponse
+    assistant_message: ChatMessageResponse
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: int
+    messages: List[ChatMessageResponse]
