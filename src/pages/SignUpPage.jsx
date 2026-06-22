@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import PageLayout from '../components/PageLayout'
 import TextInput from '../components/TextInput'
 import Button from '../components/Button'
+import { signup } from '../api'
 
 export default function SignUpPage() {
   const navigate = useNavigate()
@@ -12,7 +13,7 @@ export default function SignUpPage() {
   const [phone, setPhone] = useState('')
   const [guardianContact, setGuardianContact] = useState('')
 
-  const handleSignUp = () => {
+  const handleSignUp = async () => {
     if (
       !name.trim() ||
       !email.trim() ||
@@ -24,17 +25,22 @@ export default function SignUpPage() {
       return
     }
 
-    const userInfo = {
-      name,
-      email,
-      password,
-      phone,
-      guardianContact
-    }
+    try {
+      const requestBody = {
+        name,
+        email,
+        password,
+        phone,
+        guardian_phone: guardianContact,
+      }
 
-    localStorage.setItem('userInfo', JSON.stringify(userInfo))
-    alert('회원가입이 완료되었습니다.')
-    navigate('/')
+      const result = await signup(requestBody)
+
+      alert(result.message || '회원가입이 완료되었습니다.')
+      navigate('/')
+    } catch (error) {
+      alert(error.message || '회원가입에 실패했습니다.')
+    }
   }
 
   return (
