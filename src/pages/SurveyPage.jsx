@@ -26,18 +26,26 @@ const QUESTION_MAP = {
     options: ['현재는 없지만 과거에 있었음', '있음', '없음']
   },
   medicationTime: {
-    text: '약을 주로 언제 복용하나요?',
+    text: '약을 어느 시간에 복용하시나요?',
     options: [
-      '하루 1회, 주로 아침',
-      '하루 1회, 주로 저녁이나 자기 전',
-      '하루 2회 이상 정해진 시간',
-      '복용 시간이 일정하지 않음'
+      '아침',
+      '점심',
+      '저녁',
+      '자기 전'
     ]
   },
   activityEnergy: {
     text: '최근 일상 활동을 시작하는 데 드는 힘은 어느 정도 인가요?',
     options: ['쉽게 시작함', '조금 힘듦', '많이 힘듦', '거의 시작하기 어려움']
   }
+}
+
+// 한국어 선택지와 백엔드 enum 값의 매핑
+const MEDICATION_TIME_MAPPING = {
+  '아침': 'MORNING',
+  '점심': 'LUNCH',
+  '저녁': 'EVENING',
+  '자기 전': 'BEFORE_SLEEP'
 }
 
 function getStepsSequence(answers) {
@@ -66,7 +74,14 @@ export default function SurveyPage() {
   const question = QUESTION_MAP[currentKey]
 
   const handleSelect = (option) => {
-    const nextAnswers = { ...answers, [currentKey]: option }
+    let valueToStore = option
+    
+    // medicationTime의 경우 enum 값으로 매핑
+    if (currentKey === 'medicationTime') {
+      valueToStore = MEDICATION_TIME_MAPPING[option]
+    }
+    
+    const nextAnswers = { ...answers, [currentKey]: valueToStore }
 
     // If user answered hasMedication and it's not '있음', clear medicationTime
     if (currentKey === 'hasMedication' && option !== '있음') {
@@ -106,16 +121,22 @@ export default function SurveyPage() {
           <h2 className="survey-question">{question.text}</h2>
 
           <div className="survey-options">
-            {question.options.map((opt) => (
-              <div key={opt} style={{ marginBottom: 8 }}>
-                <Button
-                  onClick={() => handleSelect(opt)}
-                  variant={answers[currentKey] === opt ? 'primary' : 'secondary'}
-                >
-                  {opt}
-                </Button>
-              </div>
-            ))}
+            {question.options.map((opt) => {
+              const isSelected = currentKey === 'medicationTime'
+                ? MEDICATION_TIME_MAPPING[opt] === answers[currentKey]
+                : opt === answers[currentKey]
+              
+              return (
+                <div key={opt} style={{ marginBottom: 8 }}>
+                  <Button
+                    onClick={() => handleSelect(opt)}
+                    variant={isSelected ? 'primary' : 'secondary'}
+                  >
+                    {opt}
+                  </Button>
+                </div>
+              )
+            })}
           </div>
 
           <div className="survey-actions" style={{ marginTop: 16 }}>
