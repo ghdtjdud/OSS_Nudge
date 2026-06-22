@@ -9,10 +9,15 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [alertMessage, setAlertMessage] = useState('')
+
+  const closeAlert = () => {
+    setAlertMessage('')
+  }
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      alert('이메일과 비밀번호를 모두 입력해주세요.')
+      setAlertMessage('이메일과 비밀번호를 모두 입력해주세요.')
       return
     }
 
@@ -70,6 +75,17 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+
+      {alertMessage && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-text">{alertMessage}</div>
+            <div className="modal-actions">
+              <Button onClick={closeAlert} variant="primary">확인</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageLayout>
   )
 }
