@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.database import Base, engine
-from backend.app.routers import auth
-
+from backend.app.routers import auth, user_status
+from backend.app.models import models
 
 Base.metadata.create_all(bind=engine)
 
@@ -18,6 +18,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(user_status.router)
 
 
 @app.get("/")
