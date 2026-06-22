@@ -1,3 +1,8 @@
+# chat_service.py
+'''대화 내역 조회
+Gemini 채팅 함수 호출
+사용자/AI 메시지 DB 저장'''
+
 def generate_temporary_ai_response(
     user_message: str,
 ) -> str:

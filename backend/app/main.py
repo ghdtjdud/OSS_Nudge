@@ -6,6 +6,7 @@ from backend.app.routers import (
     auth,
     chat,
     user_status,
+    missions,
 )
 from backend.app.models import models
 
@@ -24,6 +25,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(user_status.router)
 app.include_router(chat.router)
+app.include_router(missions.router)
 
 
 @app.get("/")

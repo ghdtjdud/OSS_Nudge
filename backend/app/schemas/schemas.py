@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import List, Optional
 
@@ -11,6 +11,10 @@ from pydantic import (
     model_validator,
 )
 
+
+# =========================================================
+# 회원가입 및 로그인 스키마
+# =========================================================
 
 class SignupRequest(BaseModel):
     name: str = Field(
@@ -139,56 +143,58 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
+
 # =========================================================
 # 수면 관련 선택지
 # =========================================================
 
 class SleepBedtime(str, Enum):
+    # 22시 이전
     BEFORE_22 = "BEFORE_22"
+
+    # 22시 이상 24시 이전
     BETWEEN_22_24 = "BETWEEN_22_24"
+
+    # 24시 이상 02시 이전
     BETWEEN_00_02 = "BETWEEN_00_02"
+
+    # 02시 이후
     AFTER_02 = "AFTER_02"
 
 
 class SleepDuration(str, Enum):
+    # 4시간 미만
     UNDER_4 = "UNDER_4"
+
+    # 4시간 이상 6시간 미만
     BETWEEN_4_6 = "BETWEEN_4_6"
+
+    # 6시간 이상 8시간 미만
     BETWEEN_6_8 = "BETWEEN_6_8"
+
+    # 8시간 이상
     OVER_8 = "OVER_8"
-
-
-class SleepCondition(str, Enum):
-    DIFFICULT_TO_FALL_ASLEEP = (
-        "DIFFICULT_TO_FALL_ASLEEP"
-    )
-    WAKE_FREQUENTLY = "WAKE_FREQUENTLY"
-    SLEEP_TOO_MUCH = "SLEEP_TOO_MUCH"
-    NO_MAJOR_ISSUE = "NO_MAJOR_ISSUE"
 
 
 # =========================================================
 # 식사 관련 선택지
 # =========================================================
 
-class BreakfastFrequency(str, Enum):
-    REGULAR = "REGULAR"
-    SOMETIMES = "SOMETIMES"
-    RARELY = "RARELY"
-    VARIES = "VARIES"
+class MealRegularity(str, Enum):
+    # 아침/점심/저녁을 대체로 규칙적으로 챙김
+    ALL_MEALS_REGULAR = "ALL_MEALS_REGULAR"
 
+    # 아침은 가끔 거르지만 점심/저녁은 대체로 챙김
+    SOMETIMES_SKIP_BREAKFAST = (
+        "SOMETIMES_SKIP_BREAKFAST"
+    )
 
-class LunchDinnerPattern(str, Enum):
-    BOTH_REGULAR = "BOTH_REGULAR"
-    SKIP_LUNCH_OFTEN = "SKIP_LUNCH_OFTEN"
-    SKIP_DINNER_OFTEN = "SKIP_DINNER_OFTEN"
-    SKIP_BOTH_OFTEN = "SKIP_BOTH_OFTEN"
+    # 점심이나 저녁 중 한 끼를 자주 거름
+    OFTEN_SKIP_ONE_MEAL = "OFTEN_SKIP_ONE_MEAL"
 
-
-class AppetiteChange(str, Enum):
-    SAME_AS_USUAL = "SAME_AS_USUAL"
-    DECREASED = "DECREASED"
-    INCREASED = "INCREASED"
-    UNKNOWN = "UNKNOWN"
+    # 하루 세끼 전반적으로 불규칙하거나
+    # 두 끼 이상 자주 거름
+    GENERALLY_IRREGULAR = "GENERALLY_IRREGULAR"
 
 
 # =========================================================
@@ -196,24 +202,48 @@ class AppetiteChange(str, Enum):
 # =========================================================
 
 class MedicationStatus(str, Enum):
+    # 있음
     CURRENT = "CURRENT"
+
+    # 없음
     NONE = "NONE"
+
+    # 현재는 없지만 과거에 있었음
     PAST = "PAST"
 
 
 class MedicationTiming(str, Enum):
+    # 아침
     MORNING = "MORNING"
+
+    # 점심
     LUNCH = "LUNCH"
+
+    # 저녁
     EVENING = "EVENING"
+
+    # 자기 전
     BEFORE_SLEEP = "BEFORE_SLEEP"
-    MULTIPLE_TIMES = "MULTIPLE_TIMES"
 
 
-class MedicationForgetFrequency(str, Enum):
-    ALMOST_NEVER = "ALMOST_NEVER"
-    SOMETIMES = "SOMETIMES"
-    OFTEN = "OFTEN"
-    VERY_OFTEN = "VERY_OFTEN"
+# =========================================================
+# 일상 활동 관련 선택지
+# =========================================================
+
+class ActivityStartDifficulty(str, Enum):
+    # 쉽게 시작함
+    EASY = "EASY"
+
+    # 조금 힘듦
+    SOMEWHAT_DIFFICULT = "SOMEWHAT_DIFFICULT"
+
+    # 많이 힘듦
+    VERY_DIFFICULT = "VERY_DIFFICULT"
+
+    # 거의 시작하기 어려움
+    ALMOST_UNABLE_TO_START = (
+        "ALMOST_UNABLE_TO_START"
+    )
 
 
 # =========================================================
@@ -221,43 +251,52 @@ class MedicationForgetFrequency(str, Enum):
 # =========================================================
 
 class UserRoutineRequest(BaseModel):
+    # 최근 주로 잠드는 시간
     sleep_bedtime: SleepBedtime
+
+    # 최근 평균 수면 시간
     sleep_duration: SleepDuration
-    sleep_condition: SleepCondition
 
-    breakfast_frequency: BreakfastFrequency
-    lunch_dinner_pattern: LunchDinnerPattern
-    appetite_change: AppetiteChange
+    # 식사를 얼마나 규칙적으로 챙기는지
+    meal_regularity: MealRegularity
 
+    # 정기적으로 복용하는 약이 있는지
     medication_status: MedicationStatus
 
-    medication_timing: Optional[
-        MedicationTiming
+    # medication_status가 CURRENT인 경우에만 입력
+    # 아침·점심·저녁·자기 전 중 복수 선택 가능
+    medication_times: Optional[
+        list[MedicationTiming]
     ] = None
 
-    medication_forget_frequency: Optional[
-        MedicationForgetFrequency
-    ] = None
+    # 일상 활동을 시작하는 데 드는 어려움
+    activity_start_difficulty: ActivityStartDifficulty
 
     @model_validator(mode="after")
     def validate_medication_information(self):
-        if self.medication_status == MedicationStatus.CURRENT:
-            if self.medication_timing is None:
+        # 정기적으로 복용하는 약이 있는 경우
+        if (
+            self.medication_status
+            == MedicationStatus.CURRENT
+        ):
+            if not self.medication_times:
                 raise ValueError(
-                    "현재 복약 중인 경우 "
-                    "복약 시간을 선택해야 합니다."
+                    "정기적으로 복용하는 약이 있는 경우 "
+                    "복약 시간대를 하나 이상 선택해야 합니다."
                 )
 
-            if self.medication_forget_frequency is None:
-                raise ValueError(
-                    "현재 복약 중인 경우 "
-                    "복약을 잊는 빈도를 선택해야 합니다."
+            # 동일한 시간대를 중복으로 보낸 경우 제거
+            self.medication_times = list(
+                dict.fromkeys(
+                    self.medication_times
                 )
+            )
 
+        # 없음 또는 과거 복약인 경우
         else:
-            # 복약 중이 아니라면 세부 복약정보 제거
-            self.medication_timing = None
-            self.medication_forget_frequency = None
+            # 프론트에서 잘못 값을 보내더라도
+            # 서버에서는 복약 시간을 저장하지 않음
+            self.medication_times = None
 
         return self
 
@@ -267,21 +306,16 @@ class UserRoutineResponse(BaseModel):
 
     sleep_bedtime: SleepBedtime
     sleep_duration: SleepDuration
-    sleep_condition: SleepCondition
 
-    breakfast_frequency: BreakfastFrequency
-    lunch_dinner_pattern: LunchDinnerPattern
-    appetite_change: AppetiteChange
+    meal_regularity: MealRegularity
 
     medication_status: MedicationStatus
 
-    medication_timing: Optional[
-        MedicationTiming
+    medication_times: Optional[
+        list[MedicationTiming]
     ] = None
 
-    medication_forget_frequency: Optional[
-        MedicationForgetFrequency
-    ] = None
+    activity_start_difficulty: ActivityStartDifficulty
 
     onboarding_completed: bool = True
 
@@ -291,6 +325,7 @@ class UserRoutineResponse(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
 
 # =========================================================
 # 채팅 관련 스키마
@@ -354,12 +389,130 @@ class ChatMessageResponse(BaseModel):
     }
 
 
+class ChatHistoryResponse(BaseModel):
+    session_id: int
+    messages: List[ChatMessageResponse]
+
+
+# =========================================================
+# 미션 관련 스키마
+# =========================================================
+
+class MissionResponse(BaseModel):
+    id: int
+    code: str
+    title: str
+    description: str
+    category: str
+    difficulty: int
+    verification_code: str
+    requires_current_medication: bool
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class GeminiMissionChoice(BaseModel):
+    mission_code: str = Field(
+        ...,
+        description=(
+            "후보 목록에 존재하는 "
+            "mission_code 하나"
+        ),
+    )
+
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=300,
+        description=(
+            "사용자에게 보여줄 짧은 추천 이유"
+        ),
+    )
+
+
+class UserMissionResponse(BaseModel):
+    id: int
+    user_id: int
+    status: str
+    recommended_reason: Optional[str] = None
+
+    instance_key: str
+
+    assigned_date: date
+    assigned_at: datetime
+    completed_at: Optional[datetime] = None
+
+    mission: MissionResponse
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class MissionRecommendationResponse(BaseModel):
+    message: str
+    user_mission: UserMissionResponse
+
+
+class MedicationAnswer(str, Enum):
+    TAKEN = "TAKEN"
+    NOT_TAKEN = "NOT_TAKEN"
+    UNCLEAR = "UNCLEAR"
+
+
+class GeminiMedicationAnswer(BaseModel):
+    answer: MedicationAnswer
+
+
+class ChatRiskLevel(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class GeminiChatResult(BaseModel):
+    reply: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+    )
+
+    should_recommend_mission: bool = False
+
+    mission_context: Optional[str] = Field(
+        default=None,
+        max_length=300,
+    )
+
+    risk_level: ChatRiskLevel = ChatRiskLevel.LOW
+
+
+class RecommendedMissionCard(BaseModel):
+    user_mission_id: int
+    mission_code: str
+    title: str
+    description: str
+    reason: Optional[str] = None
+    status: str
+    verification_code: str
+    instance_key: str
+
+
 class ChatReplyResponse(BaseModel):
     session_id: int
     user_message: ChatMessageResponse
     assistant_message: ChatMessageResponse
 
+    action: str = "CHAT"
 
-class ChatHistoryResponse(BaseModel):
-    session_id: int
-    messages: List[ChatMessageResponse]
+    medication_check_slot: Optional[str] = None
+
+    should_recommend_mission: bool = False
+    mission_context: Optional[str] = None
+    risk_level: ChatRiskLevel = ChatRiskLevel.LOW
+
+    recommended_mission: Optional[
+        RecommendedMissionCard
+    ] = None
