@@ -1,10 +1,9 @@
-# mission_service.py
-'''추천 후보 미션 조회
-Gemini 미션 추천 함수 호출
-반환된 ID 검증
-user_missions 저장'''
+from datetime import datetime
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import (
+    Session,
+    joinedload,
+)
 
 from backend.app.models.models import (
     Mission,
@@ -14,34 +13,190 @@ from backend.app.models.models import (
 from backend.app.services.gemini_service import (
     recommend_mission_with_gemini,
 )
+from backend.app.services.medication_service import (
+    get_current_time_slot,
+)
 
+
+ACTIVE_MISSION_STATUSES = (
+    "ASSIGNED",
+    "IN_PROGRESS",
+)
+
+def build_mission_ui_texts(
+    mission_code: str,
+) -> dict[str, str]:
+    """
+    미션 코드에 따라 채팅 추천 기본 문구,
+    미션 카드 문구, 인증 준비 문구를 반환한다.
+    """
+
+    mission_ui_texts = {
+        "DRINK_WATER": {
+            "recommendation_message": (
+                "지금은 부담 없이 물 한 잔부터 "
+                "천천히 마셔보세요."
+            ),
+            "card_title": (
+                "지금 자리에서 일어나서 "
+                "물 한 잔을 마셔보세요"
+            ),
+            "card_subtitle": (
+                "잠시 후 카메라가 활성화됩니다"
+            ),
+            "verification_title": (
+                "물 마시기 미션을 인증할게요"
+            ),
+            "verification_subtitle": (
+                "물컵이나 물병이 카메라 화면에 "
+                "잘 보이도록 준비해주세요"
+            ),
+        },
+
+        "BRUSH_TEETH": {
+            "recommendation_message": (
+                "지금은 세면대로 가서 "
+                "가볍게 양치부터 시작해보세요."
+            ),
+            "card_title": (
+                "지금 세면대로 가서 "
+                "가볍게 양치해보세요"
+            ),
+            "card_subtitle": (
+                "잠시 후 카메라가 활성화됩니다"
+            ),
+            "verification_title": (
+                "양치하기 미션을 인증할게요"
+            ),
+            "verification_subtitle": (
+                "칫솔이 카메라 화면에 "
+                "잘 보이도록 준비해주세요"
+            ),
+        },
+
+        "EAT_MEAL": {
+            "recommendation_message": (
+                "지금은 부담되지 않는 음식을 "
+                "조금이라도 챙겨보세요."
+            ),
+            "card_title": (
+                "부담되지 않는 식사를 "
+                "조금이라도 챙겨보세요"
+            ),
+            "card_subtitle": (
+                "잠시 후 카메라가 활성화됩니다"
+            ),
+            "verification_title": (
+                "식사하기 미션을 인증할게요"
+            ),
+            "verification_subtitle": (
+                "준비한 음식이 카메라 화면에 "
+                "잘 보이도록 놓아주세요"
+            ),
+        },
+
+        "TAKE_MEDICATION": {
+            "recommendation_message": (
+                "지금은 설정해 둔 복약 시간대예요. "
+                "처방받은 방법대로 약을 챙겨보세요."
+            ),
+            "card_title": (
+                "처방받은 약을 정해진 방법대로 "
+                "챙겨 드세요"
+            ),
+            "card_subtitle": (
+                "잠시 후 카메라가 활성화됩니다"
+            ),
+            "verification_title": (
+                "약 먹기 미션을 인증할게요"
+            ),
+            "verification_subtitle": (
+                "약 포장이나 약통이 카메라 화면에 "
+                "잘 보이도록 준비해주세요"
+            ),
+        },
+    }
+
+    return mission_ui_texts.get(
+        mission_code,
+        {
+            "recommendation_message": (
+                "지금은 부담 없는 작은 행동부터 "
+                "천천히 시작해보세요."
+            ),
+            "card_title": (
+                "지금 작은 행동부터 시작해보세요"
+            ),
+            "card_subtitle": (
+                "잠시 후 카메라가 활성화됩니다"
+            ),
+            "verification_title": (
+                "미션 인증을 준비하고 있어요"
+            ),
+            "verification_subtitle": (
+                "인증할 물건이 카메라 화면에 "
+                "잘 보이도록 준비해주세요"
+            ),
+        },
+    )
 
 def build_user_profile_payload(
     profile: UserRoutineProfile,
 ) -> dict:
     return {
-        "sleep_bedtime": profile.sleep_bedtime,
-        "sleep_duration": profile.sleep_duration,
-        "sleep_condition": profile.sleep_condition,
-        "breakfast_frequency": (
-            profile.breakfast_frequency
+        "sleep_bedtime": (
+            profile.sleep_bedtime
         ),
-        "lunch_dinner_pattern": (
-            profile.lunch_dinner_pattern
+        "sleep_duration": (
+            profile.sleep_duration
         ),
-        "appetite_change": (
-            profile.appetite_change
+        "meal_regularity": (
+            profile.meal_regularity
         ),
         "medication_status": (
             profile.medication_status
         ),
         "medication_times": (
-            profile.medication_times
+            profile.medication_times or []
         ),
-        "medication_forget_frequency": (
-            profile.medication_forget_frequency
+        "activity_start_difficulty": (
+            profile
+            .activity_start_difficulty
         ),
     }
+
+
+def get_active_user_mission(
+    *,
+    db: Session,
+    user_id: int,
+) -> UserMission | None:
+    """
+    일반 미션과 복약 미션을 구분하지 않고
+    현재 진행 중인 미션 하나를 조회한다.
+    """
+
+    return (
+        db.query(UserMission)
+        .options(
+            joinedload(
+                UserMission.mission
+            )
+        )
+        .filter(
+            UserMission.user_id
+            == user_id,
+            UserMission.status.in_(
+                ACTIVE_MISSION_STATUSES
+            ),
+        )
+        .order_by(
+            UserMission
+            .assigned_at.desc(),
+            UserMission.id.desc(),
+        )
+        .first()
+    )
 
 
 def recommend_general_mission(
@@ -49,42 +204,35 @@ def recommend_general_mission(
     db: Session,
     user_id: int,
     profile: UserRoutineProfile,
-    recent_messages: list[dict[str, str]],
+    recent_messages: list[
+        dict[str, str]
+    ],
     assigned_date,
 ) -> UserMission | None:
     """
-    물·양치·식사 중 하나를 Gemini가 선택한다.
+    일반 생활 미션 중 하나를 추천한다.
 
-    약 미션은 이 함수에서 절대 추천하지 않는다.
+    복약 미션은 후보에서 제외한다.
+    이미 진행 중인 미션이 있으면
+    새로운 미션을 만들지 않는다.
     """
 
-    active_general = (
-        db.query(UserMission)
-        .join(
-            Mission,
-            UserMission.mission_id
-            == Mission.id,
+    active_mission = (
+        get_active_user_mission(
+            db=db,
+            user_id=user_id,
         )
-        .filter(
-            UserMission.user_id == user_id,
-            UserMission.assigned_date
-            == assigned_date,
-            UserMission.status.in_(
-                ["ASSIGNED", "IN_PROGRESS"]
-            ),
-            Mission.code
-            != "TAKE_MEDICATION",
-        )
-        .first()
     )
 
-    if active_general is not None:
+    if active_mission is not None:
         return None
 
     already_assigned_ids = [
         mission_id
         for (mission_id,) in (
-            db.query(UserMission.mission_id)
+            db.query(
+                UserMission.mission_id
+            )
             .join(
                 Mission,
                 UserMission.mission_id
@@ -95,16 +243,24 @@ def recommend_general_mission(
                 == user_id,
                 UserMission.assigned_date
                 == assigned_date,
-                Mission.code
-                != "TAKE_MEDICATION",
+                Mission
+                .requires_current_medication
+                .is_(False),
             )
             .all()
         )
     ]
 
-    query = db.query(Mission).filter(
-        Mission.is_active.is_(True),
-        Mission.code != "TAKE_MEDICATION",
+    query = (
+        db.query(Mission)
+        .filter(
+            Mission.is_active.is_(True),
+            Mission
+            .requires_current_medication
+            .is_(False),
+            Mission.code
+            != "TAKE_MEDICATION",
+        )
     )
 
     if already_assigned_ids:
@@ -114,9 +270,13 @@ def recommend_general_mission(
             )
         )
 
-    candidates = query.order_by(
-        Mission.id.asc()
-    ).all()
+    candidates = (
+        query
+        .order_by(
+            Mission.id.asc()
+        )
+        .all()
+    )
 
     if not candidates:
         return None
@@ -125,9 +285,13 @@ def recommend_general_mission(
         {
             "mission_code": mission.code,
             "title": mission.title,
-            "description": mission.description,
+            "description": (
+                mission.description
+            ),
             "category": mission.category,
-            "difficulty": mission.difficulty,
+            "difficulty": (
+                mission.difficulty
+            ),
         }
         for mission in candidates
     ]
@@ -139,7 +303,9 @@ def recommend_general_mission(
                     profile
                 )
             ),
-            recent_messages=recent_messages,
+            recent_messages=(
+                recent_messages
+            ),
             available_missions=(
                 candidate_payload
             ),
@@ -185,12 +351,45 @@ def assign_medication_mission(
     *,
     db: Session,
     user_id: int,
+    profile: (
+        UserRoutineProfile | None
+    ),
     assigned_date,
     time_slot: str,
-) -> UserMission:
+    now: datetime,
+) -> UserMission | None:
     """
-    사용자가 복약하지 않았다고 답한 경우에만 호출한다.
+    아래 조건을 모두 충족할 때만
+    복약 미션을 배정한다.
+
+    1. medication_status가 CURRENT
+    2. 해당 슬롯을 사용자가 선택함
+    3. 현재 실제 시간대가 해당 슬롯임
+    4. 다른 진행 중 미션이 없음
     """
+
+    if profile is None:
+        return None
+
+    if (
+        profile.medication_status
+        != "CURRENT"
+    ):
+        return None
+
+    medication_times = (
+        profile.medication_times or []
+    )
+
+    if time_slot not in medication_times:
+        return None
+
+    current_slot = (
+        get_current_time_slot(now)
+    )
+
+    if current_slot != time_slot:
+        return None
 
     mission = (
         db.query(Mission)
@@ -198,6 +397,9 @@ def assign_medication_mission(
             Mission.code
             == "TAKE_MEDICATION",
             Mission.is_active.is_(True),
+            Mission
+            .requires_current_medication
+            .is_(True),
         )
         .first()
     )
@@ -205,7 +407,8 @@ def assign_medication_mission(
     if mission is None:
         raise ValueError(
             "TAKE_MEDICATION 미션이 "
-            "DB에 없습니다."
+            "DB에 없거나 복약 전용 미션으로 "
+            "설정되지 않았습니다."
         )
 
     instance_key = (
@@ -214,8 +417,14 @@ def assign_medication_mission(
 
     existing = (
         db.query(UserMission)
+        .options(
+            joinedload(
+                UserMission.mission
+            )
+        )
         .filter(
-            UserMission.user_id == user_id,
+            UserMission.user_id
+            == user_id,
             UserMission.mission_id
             == mission.id,
             UserMission.assigned_date
@@ -227,7 +436,23 @@ def assign_medication_mission(
     )
 
     if existing is not None:
-        return existing
+        if (
+            existing.status
+            in ACTIVE_MISSION_STATUSES
+        ):
+            return existing
+
+        return None
+
+    active_mission = (
+        get_active_user_mission(
+            db=db,
+            user_id=user_id,
+        )
+    )
+
+    if active_mission is not None:
+        return None
 
     user_mission = UserMission(
         user_id=user_id,
@@ -235,9 +460,8 @@ def assign_medication_mission(
         mission=mission,
         status="ASSIGNED",
         recommended_reason=(
-            "설정한 복약 시간대에 아직 "
-            "약을 복용하지 않았다고 답해 "
-            "추천된 미션입니다."
+            "지금은 설정해 둔 복약 시간대예요. "
+            "처방받은 방법대로 약을 챙겨보세요."
         ),
         instance_key=instance_key,
         assigned_date=assigned_date,

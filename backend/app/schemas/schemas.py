@@ -326,7 +326,6 @@ class UserRoutineResponse(BaseModel):
         "from_attributes": True,
     }
 
-
 # =========================================================
 # 채팅 관련 스키마
 # =========================================================
@@ -339,6 +338,22 @@ class ChatInputType(str, Enum):
 class ChatRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
+
+
+class ChatAction(str, Enum):
+    CHAT = "CHAT"
+
+    MEDICATION_CHECK_REQUIRED = (
+        "MEDICATION_CHECK_REQUIRED"
+    )
+
+    MEDICATION_CONFIRMED = (
+        "MEDICATION_CONFIRMED"
+    )
+
+    OPEN_MISSION_VERIFICATION = (
+        "OPEN_MISSION_VERIFICATION"
+    )
 
 
 class ChatSessionResponse(BaseModel):
@@ -388,6 +403,10 @@ class ChatMessageResponse(BaseModel):
         "from_attributes": True,
     }
 
+class ChatSessionCreateResponse(
+    ChatSessionResponse
+):
+    initial_message: ChatMessageResponse
 
 class ChatHistoryResponse(BaseModel):
     session_id: int
@@ -492,6 +511,11 @@ class GeminiChatResult(BaseModel):
 class RecommendedMissionCard(BaseModel):
     user_mission_id: int
     mission_code: str
+
+    # GENERAL 또는 MEDICATION
+    mission_type: str
+
+    # DB에 저장된 기본 미션 정보
     title: str
     description: str
     reason: Optional[str] = None
@@ -499,19 +523,32 @@ class RecommendedMissionCard(BaseModel):
     verification_code: str
     instance_key: str
 
+    # 미션 카드 전체 화면에 표시할 문구
+    card_title: str
+    card_subtitle: str
+
+    # 카메라 인증 준비 화면에 표시할 문구
+    verification_title: str
+    verification_subtitle: str
+
 
 class ChatReplyResponse(BaseModel):
     session_id: int
+
     user_message: ChatMessageResponse
     assistant_message: ChatMessageResponse
 
-    action: str = "CHAT"
+    action: ChatAction = ChatAction.CHAT
 
     medication_check_slot: Optional[str] = None
 
     should_recommend_mission: bool = False
     mission_context: Optional[str] = None
     risk_level: ChatRiskLevel = ChatRiskLevel.LOW
+
+    # 화면 전환용
+    should_navigate_to_mission: bool = False
+    next_screen: Optional[str] = None
 
     recommended_mission: Optional[
         RecommendedMissionCard

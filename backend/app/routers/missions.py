@@ -1,5 +1,3 @@
-from datetime import date
-
 from fastapi import (
     APIRouter,
     Depends,
@@ -30,7 +28,13 @@ from backend.app.services.auth_service import (
 )
 from backend.app.services.gemini_service import (
     GeminiServiceError,
-    recommend_mission_with_gemini,
+)
+from backend.app.services.medication_service import (
+    get_local_now,
+)
+from backend.app.services.mission_service import (
+    get_active_user_mission,
+    recommend_general_mission,
 )
 
 
@@ -54,7 +58,8 @@ def get_recent_messages(
             == ChatSession.id,
         )
         .filter(
-            ChatSession.user_id == user_id
+            ChatSession.user_id
+            == user_id
         )
         .order_by(
             ChatMessage.created_at.desc(),
@@ -75,37 +80,11 @@ def get_recent_messages(
     ]
 
 
-def build_user_profile(
-    profile: UserRoutineProfile,
-) -> dict:
-    return {
-        "sleep_bedtime": profile.sleep_bedtime,
-        "sleep_duration": profile.sleep_duration,
-        "sleep_condition": profile.sleep_condition,
-        "breakfast_frequency": (
-            profile.breakfast_frequency
-        ),
-        "lunch_dinner_pattern": (
-            profile.lunch_dinner_pattern
-        ),
-        "appetite_change": (
-            profile.appetite_change
-        ),
-        "medication_status": (
-            profile.medication_status
-        ),
-        "medication_times": (
-            profile.medication_times
-        ),
-        "medication_forget_frequency": (
-            profile.medication_forget_frequency
-        ),
-    }
-
-
 @router.get(
     "",
-    response_model=list[MissionResponse],
+    response_model=list[
+        MissionResponse
+    ],
 )
 def get_available_missions(
     current_user: User = Depends(
@@ -113,11 +92,22 @@ def get_available_missions(
     ),
     db: Session = Depends(get_db),
 ):
+    """
+    일반 미션 목록만 반환한다.
+
+    TAKE_MEDICATION은 채팅에서
+    복약 여부를 확인한 뒤에만 배정한다.
+    """
+
     return (
         db.query(Mission)
         .filter(
             Mission.is_active.is_(True),
-            Mission.code != "TAKE_MEDICATION",
+            Mission
+            .requires_current_medication
+            .is_(False),
+            Mission.code
+            != "TAKE_MEDICATION",
         )
         .order_by(
             Mission.id.asc()
@@ -128,8 +118,12 @@ def get_available_missions(
 
 @router.post(
     "/recommend",
-    response_model=MissionRecommendationResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=(
+        MissionRecommendationResponse
+    ),
+    status_code=(
+        status.HTTP_201_CREATED
+    ),
 )
 def recommend_mission(
     current_user: User = Depends(
@@ -137,6 +131,13 @@ def recommend_mission(
     ),
     db: Session = Depends(get_db),
 ):
+    """
+    수동 일반 미션 추천 API.
+
+    복약 미션은 절대 추천하지 않는다.
+    진행 중인 미션이 있으면 기존 미션을 반환한다.
+    """
+
     profile = (
         db.query(UserRoutineProfile)
         .filter(
@@ -148,163 +149,92 @@ def recommend_mission(
 
     if profile is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=(
+                status.HTTP_403_FORBIDDEN
+            ),
             detail=(
-                "미션 추천 전에 사용자 상태정보를 "
-                "입력해야 합니다."
+                "미션 추천 전에 사용자 "
+                "상태정보를 입력해야 합니다."
             ),
         )
 
-    # 아직 진행 중인 오늘 미션이 있으면
-    # 새 미션을 중복 추천하지 않음
-    existing_user_mission = (
-        db.query(UserMission)
-        .filter(
-            UserMission.user_id
-            == current_user.id,
-            UserMission.assigned_date
-            == date.today(),
-            UserMission.status.in_(
-                [
-                    "ASSIGNED",
-                    "IN_PROGRESS",
-                ]
-            ),
+    active_mission = (
+        get_active_user_mission(
+            db=db,
+            user_id=current_user.id,
         )
-        .order_by(
-            UserMission.assigned_at.desc()
-        )
-        .first()
     )
 
-    if existing_user_mission is not None:
+    if active_mission is not None:
         return {
             "message": (
-                "오늘 진행 중인 미션이 있습니다."
+                "현재 진행 중인 미션이 있습니다."
             ),
             "user_mission": (
-                existing_user_mission
+                active_mission
             ),
         }
 
-    mission_query = db.query(Mission).filter(
-        Mission.is_active.is_(True),
-        Mission.code != "TAKE_MEDICATION",
+    today_local = (
+        get_local_now().date()
     )
-
-    # 오늘 이미 추천된 미션은 제외
-    today_mission_ids = [
-        mission_id
-        for (mission_id,) in (
-            db.query(UserMission.mission_id)
-            .filter(
-                UserMission.user_id
-                == current_user.id,
-                UserMission.assigned_date
-                == date.today(),
-            )
-            .all()
-        )
-    ]
-
-    if today_mission_ids:
-        mission_query = mission_query.filter(
-            Mission.id.notin_(
-                today_mission_ids
-            )
-        )
-
-    available_missions = (
-        mission_query
-        .order_by(Mission.id.asc())
-        .all()
-    )
-
-    if not available_missions:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "오늘 추천할 수 있는 미션이 "
-                "더 이상 없습니다."
-            ),
-        )
-
-    available_mission_payload = [
-        {
-            "mission_code": mission.code,
-            "title": mission.title,
-            "description": mission.description,
-            "category": mission.category,
-            "difficulty": mission.difficulty,
-        }
-        for mission in available_missions
-    ]
 
     try:
-        gemini_result = (
-            recommend_mission_with_gemini(
-                user_profile=build_user_profile(
-                    profile
-                ),
+        user_mission = (
+            recommend_general_mission(
+                db=db,
+                user_id=current_user.id,
+                profile=profile,
                 recent_messages=(
                     get_recent_messages(
-                        user_id=current_user.id,
+                        user_id=(
+                            current_user.id
+                        ),
                         db=db,
                     )
                 ),
-                available_missions=(
-                    available_mission_payload
+                assigned_date=(
+                    today_local
                 ),
             )
         )
 
+        if user_mission is None:
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_409_CONFLICT
+                ),
+                detail=(
+                    "현재 추천할 수 있는 "
+                    "새 일반 미션이 없습니다."
+                ),
+            )
+
+        db.commit()
+        db.refresh(user_mission)
+
+    except HTTPException:
+        db.rollback()
+        raise
+
     except GeminiServiceError as exc:
+        db.rollback()
+
         raise HTTPException(
             status_code=(
-                status.HTTP_503_SERVICE_UNAVAILABLE
+                status
+                .HTTP_503_SERVICE_UNAVAILABLE
             ),
             detail=str(exc),
         ) from exc
-
-    mission_by_code = {
-        mission.code: mission
-        for mission in available_missions
-    }
-
-    selected_mission = mission_by_code.get(
-        gemini_result.mission_code
-    )
-
-    # Gemini가 후보에 없는 코드를 반환한 경우
-    if selected_mission is None:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "Gemini가 유효하지 않은 "
-                "미션 코드를 반환했습니다."
-            ),
-        )
-
-    user_mission = UserMission(
-        user_id=current_user.id,
-        mission_id=selected_mission.id,
-        status="ASSIGNED",
-        recommended_reason=(
-            gemini_result.reason
-        ),
-        assigned_date=date.today(),
-    )
-
-    try:
-        db.add(user_mission)
-        db.commit()
-        db.refresh(user_mission)
 
     except IntegrityError as exc:
         db.rollback()
 
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
             detail=(
                 "동일한 미션이 이미 "
                 "오늘 배정되었습니다."
@@ -316,13 +246,28 @@ def recommend_mission(
 
         raise HTTPException(
             status_code=(
-                status.HTTP_500_INTERNAL_SERVER_ERROR
+                status
+                .HTTP_500_INTERNAL_SERVER_ERROR
             ),
-            detail="미션 저장에 실패했습니다.",
+            detail=(
+                "미션 저장에 실패했습니다."
+            ),
+        ) from exc
+
+    except ValueError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_502_BAD_GATEWAY
+            ),
+            detail=str(exc),
         ) from exc
 
     return {
-        "message": "새로운 미션을 추천했습니다.",
+        "message": (
+            "새로운 미션을 추천했습니다."
+        ),
         "user_mission": user_mission,
     }
 
@@ -339,16 +284,21 @@ def get_today_missions(
     ),
     db: Session = Depends(get_db),
 ):
+    today_local = (
+        get_local_now().date()
+    )
+
     user_missions = (
         db.query(UserMission)
         .filter(
             UserMission.user_id
             == current_user.id,
             UserMission.assigned_date
-            == date.today(),
+            == today_local,
         )
         .order_by(
-            UserMission.assigned_at.desc()
+            UserMission
+            .assigned_at.desc()
         )
         .all()
     )
@@ -356,7 +306,10 @@ def get_today_missions(
     return [
         {
             "message": "오늘의 미션",
-            "user_mission": user_mission,
+            "user_mission": (
+                user_mission
+            ),
         }
-        for user_mission in user_missions
+        for user_mission
+        in user_missions
     ]
