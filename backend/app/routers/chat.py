@@ -26,6 +26,7 @@ from backend.app.schemas.schemas import (
     ChatReplyResponse,
     ChatSessionCreateResponse,
     ChatSessionResponse,
+    GeminiChatResult,
 )
 from backend.app.services.auth_service import (
     get_current_user,
@@ -56,6 +57,11 @@ from backend.app.services.speech_service import (
     SpeechServiceError,
     SpeechValidationError,
     transcribe_audio,
+)
+from backend.app.services.crisis_service import (
+    build_crisis_assistant_message,
+    build_crisis_support,
+    detect_rule_based_high_risk,
 )
 
 
@@ -357,6 +363,15 @@ def save_and_build_response(
     recommended_mission: (
         UserMission | None
     ),
+
+    crisis_support: dict | None = None,
+    crisis_detection_stage: (
+        str | None
+    ) = None,
+    crisis_signals: (
+        list[str] | None
+    ) = None,
+    crisis_reason: str | None = None,
 ) -> dict:
     (
         user_message,
@@ -378,12 +393,30 @@ def save_and_build_response(
     db.refresh(user_message)
     db.refresh(assistant_message)
 
-    should_navigate = (
+    should_navigate_to_mission = (
         action
         == "OPEN_MISSION_VERIFICATION"
         and recommended_mission
         is not None
     )
+
+    should_navigate_to_crisis = (
+        action
+        == "OPEN_CRISIS_SUPPORT"
+        and crisis_support
+        is not None
+    )
+
+    if should_navigate_to_crisis:
+        next_screen = "CRISIS_SUPPORT"
+
+    elif should_navigate_to_mission:
+        next_screen = (
+            "MISSION_VERIFICATION"
+        )
+
+    else:
+        next_screen = None
 
     return {
         "session_id": session_id,
@@ -392,9 +425,11 @@ def save_and_build_response(
             assistant_message
         ),
         "action": action,
+
         "medication_check_slot": (
             medication_check_slot
         ),
+
         "should_recommend_mission": (
             should_recommend_mission
         ),
@@ -402,21 +437,133 @@ def save_and_build_response(
             mission_context
         ),
         "risk_level": risk_level,
+
         "should_navigate_to_mission": (
-            should_navigate
+            should_navigate_to_mission
         ),
-        "next_screen": (
-            "MISSION_VERIFICATION"
-            if should_navigate
-            else None
+        "should_navigate_to_crisis": (
+            should_navigate_to_crisis
         ),
+        "next_screen": next_screen,
+
         "recommended_mission": (
             build_mission_card(
                 recommended_mission
             )
         ),
+
+        "crisis_detection_stage": (
+            crisis_detection_stage
+        ),
+        "crisis_signals": (
+            crisis_signals or []
+        ),
+        "crisis_reason": (
+            crisis_reason
+        ),
+        "crisis_support": (
+            crisis_support
+        ),
     }
 
+def save_crisis_response(
+    *,
+    db: Session,
+    session_id: int,
+    request: ChatMessageRequest,
+    current_user: User,
+    detection_stage: str,
+    crisis_signals: list[str],
+    crisis_reason: str | None,
+) -> dict:
+    """
+    HIGH 위험이 감지되면
+    복약 질문과 미션 추천을 모두 중단하고
+    긴급 지원 화면 정보를 반환한다.
+    """
+
+    return save_and_build_response(
+        db=db,
+        session_id=session_id,
+        request=request,
+        assistant_content=(
+            build_crisis_assistant_message()
+        ),
+        action="OPEN_CRISIS_SUPPORT",
+        medication_check_slot=None,
+        should_recommend_mission=False,
+        mission_context=None,
+        risk_level="HIGH",
+        recommended_mission=None,
+
+        crisis_support=(
+            build_crisis_support(
+                current_user
+            )
+        ),
+        crisis_detection_stage=(
+            detection_stage
+        ),
+        crisis_signals=(
+            crisis_signals
+        ),
+        crisis_reason=(
+            crisis_reason
+        ),
+    )
+
+
+def maybe_save_gemini_crisis_response(
+    *,
+    db: Session,
+    session_id: int,
+    request: ChatMessageRequest,
+    current_user: User,
+    gemini_result: GeminiChatResult,
+) -> dict | None:
+    """
+    2차 Gemini 문맥 평가가 HIGH인 경우
+    긴급 지원 화면 응답을 저장한다.
+    """
+
+    is_high = (
+        gemini_result
+        .risk_level
+        .value
+        == "HIGH"
+        or gemini_result
+        .immediate_danger
+    )
+
+    if not is_high:
+        return None
+
+    crisis_signals = [
+        signal.value
+        for signal
+        in gemini_result.crisis_signals
+    ]
+
+    return save_crisis_response(
+        db=db,
+        session_id=session_id,
+        request=request,
+        current_user=current_user,
+        detection_stage=(
+            "GEMINI_CONTEXT_2"
+        ),
+        crisis_signals=(
+            crisis_signals
+        ),
+        crisis_reason=(
+            gemini_result.crisis_reason
+            or (
+                "대화 문맥에서 현재의 "
+                "즉각적인 위기 가능성이 "
+                "확인되었습니다."
+            )
+        ),
+    )
 
 @router.post(
     "/sessions",
@@ -578,6 +725,35 @@ def send_chat_message(
     today_local = now_local.date()
 
     try:
+        # =============================================
+        # 0. 1차 명시적 급성 위기 신호 확인
+        # =============================================
+        first_stage_result = (
+            detect_rule_based_high_risk(
+                request.content
+            )
+        )
+
+        if first_stage_result.is_high:
+            return save_crisis_response(
+                db=db,
+                session_id=session_id,
+                request=request,
+                current_user=(
+                    current_user
+                ),
+                detection_stage=(
+                    "RULE_BASED_1"
+                ),
+                crisis_signals=list(
+                    first_stage_result
+                    .signals
+                ),
+                crisis_reason=(
+                    first_stage_result
+                    .reason
+                ),
+            )
         # =============================================
         # 1. 이전 복약 질문에 대한 답변 처리
         # =============================================
@@ -817,6 +993,23 @@ def send_chat_message(
                 )
             )
 
+            crisis_response = (
+                maybe_save_gemini_crisis_response(
+                    db=db,
+                    session_id=session_id,
+                    request=request,
+                    current_user=(
+                        current_user
+                    ),
+                    gemini_result=(
+                        normal_result
+                    ),
+                )
+            )
+
+            if crisis_response is not None:
+                return crisis_response
+
             assistant_content = (
                 normal_result.reply
                 + "\n\n그리고 복약 여부도 "
@@ -910,6 +1103,23 @@ def send_chat_message(
             )
         )
 
+        crisis_response = (
+            maybe_save_gemini_crisis_response(
+                db=db,
+                session_id=session_id,
+                request=request,
+                current_user=(
+                    current_user
+                ),
+                gemini_result=(
+                    gemini_result
+                ),
+            )
+        )
+
+        if crisis_response is not None:
+            return crisis_response
+        
         assistant_content = (
             gemini_result.reply
         )
