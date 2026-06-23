@@ -355,6 +355,10 @@ class ChatAction(str, Enum):
         "OPEN_MISSION_VERIFICATION"
     )
 
+    OPEN_CRISIS_SUPPORT = (
+        "OPEN_CRISIS_SUPPORT"
+    )
+
 
 class ChatSessionResponse(BaseModel):
     id: int
@@ -502,6 +506,78 @@ class ChatRiskLevel(str, Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
+class CrisisDetectionStage(
+    str,
+    Enum,
+):
+    RULE_BASED_1 = "RULE_BASED_1"
+    GEMINI_CONTEXT_2 = (
+        "GEMINI_CONTEXT_2"
+    )
+
+
+class CrisisSignalType(
+    str,
+    Enum,
+):
+    CURRENT_SUICIDAL_IDEATION = (
+        "CURRENT_SUICIDAL_IDEATION"
+    )
+
+    CURRENT_SUICIDAL_INTENT = (
+        "CURRENT_SUICIDAL_INTENT"
+    )
+
+    SUICIDE_PLAN_OR_PREPARATION = (
+        "SUICIDE_PLAN_OR_PREPARATION"
+    )
+
+    ACCESS_TO_MEANS = (
+        "ACCESS_TO_MEANS"
+    )
+
+    CURRENT_OR_RECENT_ATTEMPT = (
+        "CURRENT_OR_RECENT_ATTEMPT"
+    )
+
+    CURRENT_SELF_HARM = (
+        "CURRENT_SELF_HARM"
+    )
+
+    INABILITY_TO_STAY_SAFE = (
+        "INABILITY_TO_STAY_SAFE"
+    )
+
+    IMMEDIATE_HARM_TO_OTHERS = (
+        "IMMEDIATE_HARM_TO_OTHERS"
+    )
+
+    PASSIVE_DEATH_WISH = (
+        "PASSIVE_DEATH_WISH"
+    )
+
+    HOPELESSNESS = "HOPELESSNESS"
+
+    PERCEIVED_BURDEN = (
+        "PERCEIVED_BURDEN"
+    )
+
+    UNBEARABLE_PAIN = (
+        "UNBEARABLE_PAIN"
+    )
+
+    GOODBYE_OR_GIVING_AWAY = (
+        "GOODBYE_OR_GIVING_AWAY"
+    )
+
+    SOCIAL_WITHDRAWAL = (
+        "SOCIAL_WITHDRAWAL"
+    )
+
+    SUBSTANCE_ESCALATION = (
+        "SUBSTANCE_ESCALATION"
+    )
+
 
 class GeminiChatResult(BaseModel):
     reply: str = Field(
@@ -517,7 +593,24 @@ class GeminiChatResult(BaseModel):
         max_length=300,
     )
 
-    risk_level: ChatRiskLevel = ChatRiskLevel.LOW
+    risk_level: ChatRiskLevel = (
+        ChatRiskLevel.LOW
+    )
+
+    # 현재 즉각적인 위험이 있는지
+    immediate_danger: bool = False
+
+    # 판단에 사용한 임상적 위험 신호
+    crisis_signals: list[
+        CrisisSignalType
+    ] = Field(
+        default_factory=list
+    )
+
+    crisis_reason: Optional[str] = Field(
+        default=None,
+        max_length=500,
+    )
 
 
 class RecommendedMissionCard(BaseModel):
@@ -543,6 +636,40 @@ class RecommendedMissionCard(BaseModel):
     verification_title: str
     verification_subtitle: str
 
+class CrisisContactResponse(
+    BaseModel
+):
+    contact_type: str
+    label: str
+
+    phone: str
+    display_phone: str
+    phone_uri: str
+
+
+class CrisisSupportResponse(
+    BaseModel
+):
+    title: str
+    message: str
+
+    primary_contact: (
+        CrisisContactResponse
+    )
+
+    secondary_contacts: list[
+        CrisisContactResponse
+    ] = Field(
+        default_factory=list
+    )
+
+    has_registered_contact: bool
+
+    nearby_hospital_search_enabled: (
+        bool
+    )
+
+    tts_text: Optional[str] = None
 
 class ChatReplyResponse(BaseModel):
     session_id: int
@@ -550,20 +677,51 @@ class ChatReplyResponse(BaseModel):
     user_message: ChatMessageResponse
     assistant_message: ChatMessageResponse
 
-    action: ChatAction = ChatAction.CHAT
+    action: ChatAction = (
+        ChatAction.CHAT
+    )
 
-    medication_check_slot: Optional[str] = None
+    medication_check_slot: (
+        Optional[str]
+    ) = None
 
     should_recommend_mission: bool = False
     mission_context: Optional[str] = None
-    risk_level: ChatRiskLevel = ChatRiskLevel.LOW
 
-    # 화면 전환용
-    should_navigate_to_mission: bool = False
+    risk_level: ChatRiskLevel = (
+        ChatRiskLevel.LOW
+    )
+
+    # 미션 화면 전환
+    should_navigate_to_mission: (
+        bool
+    ) = False
+
+    # 위기지원 화면 전환
+    should_navigate_to_crisis: (
+        bool
+    ) = False
+
     next_screen: Optional[str] = None
 
     recommended_mission: Optional[
         RecommendedMissionCard
+    ] = None
+
+    crisis_detection_stage: Optional[
+        CrisisDetectionStage
+    ] = None
+
+    crisis_signals: list[
+        CrisisSignalType
+    ] = Field(
+        default_factory=list
+    )
+
+    crisis_reason: Optional[str] = None
+
+    crisis_support: Optional[
+        CrisisSupportResponse
     ] = None
 
 class BoundingBoxResponse(BaseModel):
@@ -609,7 +767,7 @@ class MissionResultScreenResponse(
 
     button_text: str
     next_screen: str
-    
+
 
 class MissionFrameVerificationResponse(
     BaseModel
