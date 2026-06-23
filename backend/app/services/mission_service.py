@@ -140,6 +140,72 @@ def build_mission_ui_texts(
         },
     )
 
+def build_mission_result_ui(
+    *,
+    success: bool,
+) -> dict[str, str | None]:
+    """
+    미션 인증 결과 화면에 표시할
+    기본 문구와 이동 정보를 반환한다.
+
+    성공 문구는 Gemini 호출 실패 시
+    fallback 문구로 사용한다.
+    """
+
+    if success:
+        fallback_message = (
+            "오늘의 Nudge로 천천히 "
+            "한걸음씩 나아가요!"
+        )
+
+        return {
+            "result_type": "SUCCESS",
+
+            # 화면 표시용 제목
+            "result_title": (
+                "오늘의 Nudge 성공🎉"
+            ),
+
+            # Gemini 실패 시 사용할 기본 문구
+            "result_message": (
+                fallback_message
+            ),
+
+            # TTS에서는 이모지를 제외한 제목 사용
+            "tts_title": (
+                "오늘의 Nudge 성공"
+            ),
+
+            # Gemini 성공 시 AI 문구로 교체됨
+            "tts_text": (
+                fallback_message
+            ),
+
+            "button_text": (
+                "대시보드로 이동"
+            ),
+            "next_screen": "DASHBOARD",
+        }
+
+    return {
+        "result_type": "FAILURE",
+        "result_title": (
+            "미션 확인이 어려워요"
+        ),
+        "result_message": (
+            "다시 한번 미션을 수행해주세요"
+        ),
+
+        # 현재는 성공 화면만 TTS 재생
+        "tts_title": None,
+        "tts_text": None,
+
+        "button_text": (
+            "미션카드로 이동"
+        ),
+        "next_screen": "MISSION_CARD",
+    }
+
 def build_user_profile_payload(
     profile: UserRoutineProfile,
 ) -> dict:
