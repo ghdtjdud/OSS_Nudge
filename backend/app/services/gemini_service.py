@@ -11,6 +11,7 @@ from backend.app.schemas.schemas import (
     GeminiChatResult,
     GeminiMedicationAnswer,
     GeminiMissionChoice,
+    GeminiMissionCompletionFeedback,
 )
 
 
@@ -171,6 +172,42 @@ UNCLEAR:
 4. 지정된 JSON 스키마만 반환한다.
 """
 
+MISSION_COMPLETION_FEEDBACK_PROMPT = """
+당신은 Nudge 서비스의 정서지원 AI다.
+
+사용자가 작은 일상 미션 하나를 완료했다.
+사용자가 완료한 행동을 구체적으로 인정하고,
+부담스럽지 않은 칭찬과 격려 문구를 작성한다.
+
+작성 규칙:
+1. 자연스러운 한국어 한두 문장으로 작성한다.
+2. 전체 길이는 약 40자에서 90자로 작성한다.
+3. 사용자가 완료한 행동을 구체적으로 언급한다.
+4. 과장된 칭찬이나 유아적인 표현은 사용하지 않는다.
+5. 훈계하거나 다음 행동을 강요하지 않는다.
+6. 질문을 포함하지 않는다.
+7. 의료적인 효과를 단정하지 않는다.
+8. 이모지는 사용하지 않는다.
+9. TTS로 읽었을 때 자연스러운 문장으로 작성한다.
+10. 다음 문구와 비슷한 따뜻하고 차분한 어조를 유지한다.
+   "오늘의 Nudge로 천천히 한걸음씩 나아가요!"
+
+미션별 방향:
+- DRINK_WATER:
+  물을 챙겨 마신 작은 실천을 인정한다.
+
+- BRUSH_TEETH:
+  양치를 통해 자신을 돌본 행동을 인정한다.
+
+- EAT_MEAL:
+  식사를 챙긴 행동을 인정한다.
+
+- TAKE_MEDICATION:
+  정해진 복약 행동을 챙긴 점을 인정한다.
+  약의 효과, 용량 또는 복용법은 언급하지 않는다.
+
+출력은 지정된 JSON 스키마만 따른다.
+"""
 
 def generate_chat_response_with_gemini(
     *,
@@ -368,5 +405,110 @@ def recommend_mission_with_gemini(
 
         raise GeminiServiceError(
             "Gemini 미션 추천 호출 실패: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    
+def generate_mission_completion_feedback(
+    *,
+    user_name: str,
+    mission_code: str,
+    mission_title: str,
+) -> str:
+    """
+    미션 완료 화면에 표시하고
+    TTS로 읽을 칭찬·격려 문구를 생성한다.
+    """
+
+    client = get_client()
+
+    payload = {
+        "user_name": (
+            user_name.strip()
+            if user_name
+            else ""
+        ),
+        "mission_code": mission_code,
+        "mission_title": mission_title,
+        "reference_tone": (
+            "오늘의 Nudge로 천천히 "
+            "한걸음씩 나아가요!"
+        ),
+    }
+
+    try:
+        response = (
+            client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                ),
+                config=(
+                    types.GenerateContentConfig(
+                        system_instruction=(
+                            MISSION_COMPLETION_FEEDBACK_PROMPT
+                        ),
+                        temperature=0.6,
+                        response_mime_type=(
+                            "application/json"
+                        ),
+                        response_schema=(
+                            GeminiMissionCompletionFeedback
+                        ),
+                    )
+                ),
+            )
+        )
+
+        if isinstance(
+            response.parsed,
+            GeminiMissionCompletionFeedback,
+        ):
+            result = response.parsed
+
+        elif isinstance(
+            response.parsed,
+            dict,
+        ):
+            result = (
+                GeminiMissionCompletionFeedback
+                .model_validate(
+                    response.parsed
+                )
+            )
+
+        else:
+            if not response.text:
+                raise GeminiServiceError(
+                    "Gemini가 빈 미션 완료 "
+                    "피드백을 반환했습니다."
+                )
+
+            result = (
+                GeminiMissionCompletionFeedback
+                .model_validate_json(
+                    response.text
+                )
+            )
+
+        feedback = result.feedback.strip()
+
+        if not feedback:
+            raise GeminiServiceError(
+                "Gemini 미션 완료 피드백이 "
+                "비어 있습니다."
+            )
+
+        return feedback
+
+    except GeminiServiceError:
+        raise
+
+    except Exception as exc:
+        traceback.print_exc()
+
+        raise GeminiServiceError(
+            "Gemini 미션 완료 피드백 "
+            "생성 실패: "
             f"{type(exc).__name__}: {exc}"
         ) from exc

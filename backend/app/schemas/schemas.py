@@ -450,6 +450,18 @@ class GeminiMissionChoice(BaseModel):
         ),
     )
 
+class GeminiMissionCompletionFeedback(
+    BaseModel
+):
+    feedback: str = Field(
+        ...,
+        min_length=1,
+        max_length=120,
+        description=(
+            "미션을 완료한 사용자에게 제공할 "
+            "짧은 칭찬과 격려 문구"
+        ),
+    )
 
 class UserMissionResponse(BaseModel):
     id: int
@@ -568,6 +580,36 @@ class DetectedObjectResponse(BaseModel):
     matched: bool
     bounding_box: BoundingBoxResponse
 
+class MissionVerificationResultType(
+    str,
+    Enum,
+):
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+
+
+class MissionResultScreenResponse(
+    BaseModel
+):
+    user_mission_id: int
+    mission_code: str
+    status: str
+
+    result_type: (
+        MissionVerificationResultType
+    )
+
+    # 화면에 표시할 제목과 문구
+    result_title: str
+    result_message: str
+
+    # 프론트 TTS 재생용
+    tts_title: Optional[str] = None
+    tts_text: Optional[str] = None
+
+    button_text: str
+    next_screen: str
+    
 
 class MissionFrameVerificationResponse(
     BaseModel
@@ -578,6 +620,7 @@ class MissionFrameVerificationResponse(
 
     detected: bool
     expected_classes: list[str]
+
     detected_objects: list[
         DetectedObjectResponse
     ]
@@ -588,3 +631,12 @@ class MissionFrameVerificationResponse(
 
     completed: bool
     status: str
+
+    # true가 되면 프론트에서
+    # 프레임 전송과 카메라를 종료한다.
+    should_stop_camera: bool = False
+
+    # 인증 성공 시에만 포함
+    result_screen: Optional[
+        MissionResultScreenResponse
+    ] = None

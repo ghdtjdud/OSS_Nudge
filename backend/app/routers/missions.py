@@ -30,17 +30,20 @@ from backend.app.schemas.schemas import (
     MissionFrameVerificationResponse,
     MissionRecommendationResponse,
     MissionResponse,
+    MissionResultScreenResponse,
 )
 from backend.app.services.auth_service import (
     get_current_user,
 )
 from backend.app.services.gemini_service import (
     GeminiServiceError,
+    generate_mission_completion_feedback,
 )
 from backend.app.services.medication_service import (
     get_local_now,
 )
 from backend.app.services.mission_service import (
+    build_mission_result_ui,
     get_active_user_mission,
     recommend_general_mission,
 )
@@ -585,9 +588,14 @@ async def verify_user_mission_frame(
             )
         )
 
+        result_screen = None
+
         if verification_result[
             "completed"
         ]:
+            # =============================================
+            # 1. 미션 완료 상태를 먼저 DB에 저장
+            # =============================================
             user_mission.status = (
                 "COMPLETED"
             )
@@ -598,6 +606,88 @@ async def verify_user_mission_frame(
 
             db.commit()
             db.refresh(user_mission)
+
+            # =============================================
+            # 2. 기본 성공 화면 문구 준비
+            # Gemini 실패 시 fallback으로 사용
+            # =============================================
+            result_ui = (
+                build_mission_result_ui(
+                    success=True
+                )
+            )
+
+            fallback_feedback = str(
+                result_ui[
+                    "result_message"
+                ]
+            )
+
+            # =============================================
+            # 3. Gemini 미션 완료 피드백 생성
+            # =============================================
+            try:
+                ai_feedback = (
+                    await run_in_threadpool(
+                        generate_mission_completion_feedback,
+                        user_name=(
+                            current_user.name
+                        ),
+                        mission_code=(
+                            user_mission
+                            .mission
+                            .code
+                        ),
+                        mission_title=(
+                            user_mission
+                            .mission
+                            .title
+                        ),
+                    )
+                )
+
+            except GeminiServiceError as exc:
+                # Gemini가 실패하더라도
+                # 미션 완료 결과는 정상 반환한다.
+                print(
+                    "[Mission Completion Feedback] "
+                    "Gemini 호출 실패, fallback 사용:",
+                    exc,
+                )
+
+                ai_feedback = (
+                    fallback_feedback
+                )
+
+            # =============================================
+            # 4. 화면 표시 문구와 TTS 문구에
+            # Gemini 피드백 적용
+            # =============================================
+            result_ui[
+                "result_message"
+            ] = ai_feedback
+
+            result_ui[
+                "tts_text"
+            ] = ai_feedback
+
+            # tts_title은 build_mission_result_ui에서
+            # "오늘의 Nudge 성공"으로 고정됨
+
+            result_screen = {
+                "user_mission_id": (
+                    user_mission.id
+                ),
+                "mission_code": (
+                    user_mission
+                    .mission
+                    .code
+                ),
+                "status": (
+                    user_mission.status
+                ),
+                **result_ui,
+            }
 
         return {
             "user_mission_id": (
@@ -647,6 +737,15 @@ async def verify_user_mission_frame(
                 ]
             ),
             "status": user_mission.status,
+
+            "should_stop_camera": (
+                verification_result[
+                    "completed"
+                ]
+            ),
+            "result_screen": (
+                result_screen
+            ),
         }
 
     except (
@@ -699,3 +798,86 @@ async def verify_user_mission_frame(
 
     finally:
         await image.close()
+
+@router.post(
+    "/{user_mission_id}"
+    "/verification-attempt/reset",
+    response_model=(
+        MissionResultScreenResponse
+    ),
+)
+def reset_user_mission_verification(
+    user_mission_id: int,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    한 번의 미션 인증 시도를 종료하고
+    연속 탐지 진행 시간을 초기화한다.
+
+    미션 자체는 실패 처리하지 않으며,
+    IN_PROGRESS 상태를 유지하여
+    사용자가 다시 시도할 수 있게 한다.
+    """
+
+    user_mission = (
+        get_owned_user_mission(
+            user_mission_id=(
+                user_mission_id
+            ),
+            user_id=current_user.id,
+            db=db,
+        )
+    )
+
+    if (
+        user_mission.status
+        == "COMPLETED"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "이미 완료된 미션입니다."
+            ),
+        )
+
+    if (
+        user_mission.status
+        != "IN_PROGRESS"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "진행 중인 미션만 "
+                "인증을 다시 시도할 수 있습니다."
+            ),
+        )
+
+    reset_verification_progress(
+        user_mission.id
+    )
+
+    result_ui = (
+        build_mission_result_ui(
+            success=False
+        )
+    )
+
+    return {
+        "user_mission_id": (
+            user_mission.id
+        ),
+        "mission_code": (
+            user_mission.mission.code
+        ),
+        "status": (
+            user_mission.status
+        ),
+        **result_ui,
+    }
