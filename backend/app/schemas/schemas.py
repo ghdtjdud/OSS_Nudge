@@ -394,6 +394,117 @@ class ChatMessageRequest(BaseModel):
 
         return normalized_content
 
+class DevChatScenario(str, Enum):
+    CHAT_LOW = "CHAT_LOW"
+
+    MEDIUM_SAFETY_CHECK = (
+        "MEDIUM_SAFETY_CHECK"
+    )
+
+    CRISIS_HIGH = "CRISIS_HIGH"
+
+    GENERAL_MISSION = (
+        "GENERAL_MISSION"
+    )
+
+    MEDICATION_CHECK_REQUIRED = (
+        "MEDICATION_CHECK_REQUIRED"
+    )
+
+    MEDICATION_TAKEN = (
+        "MEDICATION_TAKEN"
+    )
+
+    MEDICATION_NOT_TAKEN = (
+        "MEDICATION_NOT_TAKEN"
+    )
+
+    MEDICATION_MISSION = (
+        "MEDICATION_MISSION"
+    )
+
+#------
+class DevChatMessageRequest(BaseModel):
+    scenario: DevChatScenario
+
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+    )
+
+    input_type: ChatInputType = (
+        ChatInputType.TEXT
+    )
+
+    mission_code: Optional[str] = None
+
+    medication_check_slot: (
+        Optional[str]
+    ) = None
+
+    @model_validator(mode="after")
+    def validate_dev_scenario(self):
+        if self.mission_code is not None:
+            self.mission_code = (
+                self.mission_code
+                .strip()
+                .upper()
+            )
+
+        if (
+            self.medication_check_slot
+            is not None
+        ):
+            self.medication_check_slot = (
+                self.medication_check_slot
+                .strip()
+                .upper()
+            )
+
+        if (
+            self.scenario
+            == DevChatScenario
+            .GENERAL_MISSION
+        ):
+            allowed_codes = {
+                "DRINK_WATER",
+                "BRUSH_TEETH",
+                "EAT_MEAL",
+            }
+
+            if (
+                self.mission_code
+                not in allowed_codes
+            ):
+                raise ValueError(
+                    "GENERAL_MISSION에서는 "
+                    "mission_code가 DRINK_WATER, "
+                    "BRUSH_TEETH, EAT_MEAL 중 "
+                    "하나여야 합니다."
+                )
+
+        allowed_slots = {
+            "MORNING",
+            "LUNCH",
+            "EVENING",
+            "BEFORE_SLEEP",
+        }
+
+        if (
+            self.medication_check_slot
+            is not None
+            and self.medication_check_slot
+            not in allowed_slots
+        ):
+            raise ValueError(
+                "medication_check_slot은 "
+                "MORNING, LUNCH, EVENING, "
+                "BEFORE_SLEEP 중 하나여야 합니다."
+            )
+
+        return self
+#------
 
 class ChatMessageResponse(BaseModel):
     id: int
@@ -514,7 +625,9 @@ class CrisisDetectionStage(
     GEMINI_CONTEXT_2 = (
         "GEMINI_CONTEXT_2"
     )
-
+#-----
+    DEV_TEST = "DEV_TEST"
+#-----
 
 class CrisisSignalType(
     str,
