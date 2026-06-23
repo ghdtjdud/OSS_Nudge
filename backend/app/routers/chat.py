@@ -3,7 +3,9 @@ from datetime import datetime
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     HTTPException,
+    UploadFile,
     status,
 )
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,6 +21,7 @@ from backend.app.models.models import (
 )
 from backend.app.schemas.schemas import (
     ChatHistoryResponse,
+    ChatInputType,
     ChatMessageRequest,
     ChatReplyResponse,
     ChatSessionCreateResponse,
@@ -48,6 +51,11 @@ from backend.app.services.mission_service import (
     build_mission_ui_texts,
     get_active_user_mission,
     recommend_general_mission,
+)
+from backend.app.services.speech_service import (
+    SpeechServiceError,
+    SpeechValidationError,
+    transcribe_audio,
 )
 
 
@@ -1121,6 +1129,90 @@ def send_chat_message(
             detail=str(exc),
         ) from exc
 
+@router.post(
+    "/sessions/{session_id}/voice-messages",
+    response_model=ChatReplyResponse,
+    status_code=(
+        status.HTTP_201_CREATED
+    ),
+)
+def send_voice_chat_message(
+    session_id: int,
+    audio: UploadFile = File(...),
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    React에서 녹음한 음성을 받아
+    faster-whisper로 텍스트 변환 후
+    기존 채팅 로직을 실행한다.
+    """
+
+    # 존재하지 않거나 다른 사용자의 세션에
+    # 불필요한 Whisper 추론을 실행하지 않도록
+    # 음성 인식 전에 먼저 확인한다.
+    get_owned_chat_session(
+        session_id=session_id,
+        user_id=current_user.id,
+        db=db,
+    )
+
+    filename = (
+        audio.filename
+        or "recording.webm"
+    )
+
+    try:
+        audio_bytes = (
+            audio.file.read()
+        )
+
+        transcript = transcribe_audio(
+            audio_bytes=audio_bytes,
+            filename=filename,
+        )
+
+        voice_request = (
+            ChatMessageRequest(
+                content=transcript,
+                input_type=(
+                    ChatInputType.VOICE
+                ),
+            )
+        )
+
+        # 기존 Gemini 답변,
+        # 복약 확인, 미션 추천 로직을
+        # 그대로 재사용한다.
+        return send_chat_message(
+            session_id=session_id,
+            request=voice_request,
+            current_user=current_user,
+            db=db,
+        )
+
+    except SpeechValidationError as exc:
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except SpeechServiceError as exc:
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=str(exc),
+        ) from exc
+
+    finally:
+        audio.file.close()
 
 @router.get(
     "/sessions/{session_id}/messages",
