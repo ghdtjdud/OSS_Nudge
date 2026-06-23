@@ -553,3 +553,38 @@ class ChatReplyResponse(BaseModel):
     recommended_mission: Optional[
         RecommendedMissionCard
     ] = None
+
+class BoundingBoxResponse(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class DetectedObjectResponse(BaseModel):
+    class_id: int
+    class_name: str
+    confidence: float
+    matched: bool
+    bounding_box: BoundingBoxResponse
+
+
+class MissionFrameVerificationResponse(
+    BaseModel
+):
+    user_mission_id: int
+    mission_code: str
+    verification_code: str
+
+    detected: bool
+    expected_classes: list[str]
+    detected_objects: list[
+        DetectedObjectResponse
+    ]
+
+    stable_seconds: float
+    required_seconds: float
+    progress_percent: int
+
+    completed: bool
+    status: str

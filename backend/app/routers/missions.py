@@ -1,14 +1,21 @@
+from datetime import datetime
+
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     HTTPException,
+    UploadFile,
     status,
 )
 from sqlalchemy.exc import (
     IntegrityError,
     SQLAlchemyError,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import (
+    Session,
+    joinedload,
+)
 
 from backend.app.database import get_db
 from backend.app.models.models import (
@@ -20,6 +27,7 @@ from backend.app.models.models import (
     UserRoutineProfile,
 )
 from backend.app.schemas.schemas import (
+    MissionFrameVerificationResponse,
     MissionRecommendationResponse,
     MissionResponse,
 )
@@ -36,13 +44,61 @@ from backend.app.services.mission_service import (
     get_active_user_mission,
     recommend_general_mission,
 )
-
+from backend.app.services.mission_verification_service import (
+    MissionVerificationConfigError,
+    MissionVerificationInferenceError,
+    MissionVerificationValidationError,
+    reset_verification_progress,
+    verify_mission_frame,
+)
+from starlette.concurrency import (
+    run_in_threadpool,
+)
 
 router = APIRouter(
     prefix="/api/v1/missions",
     tags=["Missions"],
 )
 
+def get_owned_user_mission(
+    *,
+    user_mission_id: int,
+    user_id: int,
+    db: Session,
+) -> UserMission:
+    """
+    현재 로그인한 사용자의 미션을 조회한다.
+    다른 사용자의 미션에는 접근할 수 없다.
+    """
+
+    user_mission = (
+        db.query(UserMission)
+        .options(
+            joinedload(
+                UserMission.mission
+            )
+        )
+        .filter(
+            UserMission.id
+            == user_mission_id,
+            UserMission.user_id
+            == user_id,
+        )
+        .first()
+    )
+
+    if user_mission is None:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND
+            ),
+            detail=(
+                "사용자 미션을 "
+                "찾을 수 없습니다."
+            ),
+        )
+
+    return user_mission
 
 def get_recent_messages(
     *,
@@ -313,3 +369,333 @@ def get_today_missions(
         for user_mission
         in user_missions
     ]
+
+@router.patch(
+    "/{user_mission_id}/start",
+    response_model=(
+        MissionRecommendationResponse
+    ),
+)
+def start_user_mission(
+    user_mission_id: int,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    배정된 미션을 시작한다.
+
+    ASSIGNED → IN_PROGRESS
+    """
+
+    user_mission = (
+        get_owned_user_mission(
+            user_mission_id=(
+                user_mission_id
+            ),
+            user_id=current_user.id,
+            db=db,
+        )
+    )
+
+    # 이미 시작한 경우에는 중복 오류 대신
+    # 현재 상태를 그대로 반환한다.
+    if (
+        user_mission.status
+        == "IN_PROGRESS"
+    ):
+        return {
+            "message": (
+                "이미 진행 중인 미션입니다."
+            ),
+            "user_mission": user_mission,
+        }
+
+    if (
+        user_mission.status
+        == "COMPLETED"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "이미 완료한 미션입니다."
+            ),
+        )
+
+    if (
+        user_mission.status
+        == "FAILED"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "종료된 미션은 "
+                "다시 시작할 수 없습니다."
+            ),
+        )
+
+    if (
+        user_mission.status
+        != "ASSIGNED"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "현재 상태에서는 "
+                "미션을 시작할 수 없습니다."
+            ),
+        )
+
+    try:
+        user_mission.status = (
+            "IN_PROGRESS"
+        )
+
+        db.commit()
+        db.refresh(user_mission)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "미션 시작 처리 중 "
+                "오류가 발생했습니다."
+            ),
+        ) from exc
+
+    return {
+        "message": "미션을 시작했습니다.",
+        "user_mission": user_mission,
+    }
+
+@router.post(
+    "/{user_mission_id}/verify-frame",
+    response_model=(
+        MissionFrameVerificationResponse
+    ),
+)
+async def verify_user_mission_frame(
+    user_mission_id: int,
+    image: UploadFile = File(...),
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    웹캠의 현재 프레임을 YOLO로 분석한다.
+
+    대상 객체가 약 3초 동안 안정적으로
+    탐지되면 미션을 COMPLETED로 변경한다.
+    """
+
+    user_mission = (
+        get_owned_user_mission(
+            user_mission_id=(
+                user_mission_id
+            ),
+            user_id=current_user.id,
+            db=db,
+        )
+    )
+
+    if (
+        user_mission.status
+        == "ASSIGNED"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "미션을 먼저 시작해주세요."
+            ),
+        )
+
+    if (
+        user_mission.status
+        == "COMPLETED"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "이미 완료된 미션입니다."
+            ),
+        )
+
+    if (
+        user_mission.status
+        != "IN_PROGRESS"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "현재 상태에서는 "
+                "미션 인증을 진행할 수 없습니다."
+            ),
+        )
+
+    content_type = (
+        image.content_type or ""
+    )
+
+    if not content_type.startswith(
+        "image/"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=(
+                "이미지 파일만 전송할 수 있습니다."
+            ),
+        )
+
+    try:
+        image_bytes = await image.read()
+
+        verification_result = (
+            await run_in_threadpool(
+                verify_mission_frame,
+                user_mission_id=(
+                    user_mission.id
+                ),
+                verification_code=(
+                    user_mission
+                    .mission
+                    .verification_code
+                ),
+                image_bytes=image_bytes,
+            )
+        )
+
+        if verification_result[
+            "completed"
+        ]:
+            user_mission.status = (
+                "COMPLETED"
+            )
+
+            user_mission.completed_at = (
+                datetime.utcnow()
+            )
+
+            db.commit()
+            db.refresh(user_mission)
+
+        return {
+            "user_mission_id": (
+                user_mission.id
+            ),
+            "mission_code": (
+                user_mission.mission.code
+            ),
+            "verification_code": (
+                user_mission
+                .mission
+                .verification_code
+            ),
+            "detected": (
+                verification_result[
+                    "detected"
+                ]
+            ),
+            "expected_classes": (
+                verification_result[
+                    "expected_classes"
+                ]
+            ),
+            "detected_objects": (
+                verification_result[
+                    "detected_objects"
+                ]
+            ),
+            "stable_seconds": (
+                verification_result[
+                    "stable_seconds"
+                ]
+            ),
+            "required_seconds": (
+                verification_result[
+                    "required_seconds"
+                ]
+            ),
+            "progress_percent": (
+                verification_result[
+                    "progress_percent"
+                ]
+            ),
+            "completed": (
+                verification_result[
+                    "completed"
+                ]
+            ),
+            "status": user_mission.status,
+        }
+
+    except (
+        MissionVerificationValidationError
+    ) as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except MissionVerificationConfigError as exc:
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except (
+        MissionVerificationInferenceError
+    ) as exc:
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        reset_verification_progress(
+            user_mission_id
+        )
+
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "미션 완료 처리 중 "
+                "오류가 발생했습니다."
+            ),
+        ) from exc
+
+    finally:
+        await image.close()

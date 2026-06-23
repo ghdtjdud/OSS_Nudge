@@ -35,3 +35,6 @@ __pycache__/
 # Virtual environment
 .venv/
 venv/
+
+# Ultralytics generated outputs
+runs/
