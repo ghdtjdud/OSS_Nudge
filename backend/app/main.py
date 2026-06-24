@@ -9,6 +9,7 @@ from backend.app.database import Base, engine
 from backend.app.routers import (
     auth,
     chat,
+    dashboard,
     user_status,
     missions,
     dev_chat,
@@ -33,6 +34,7 @@ app.include_router(auth.router)
 app.include_router(user_status.router)
 app.include_router(chat.router)
 app.include_router(missions.router)
+app.include_router(dashboard.router)
 
 if (
     os.getenv(

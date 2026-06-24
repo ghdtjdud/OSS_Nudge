@@ -1135,3 +1135,43 @@ class MissionFrameVerificationResponse(
     result_screen: Optional[
         MissionResultScreenResponse
     ] = None
+
+# =========================================================
+# 대시보드 관련 스키마
+# =========================================================
+
+class DashboardStickerType(
+    str,
+    Enum,
+):
+    STICKER_1 = "STICKER_1"
+    STICKER_2 = "STICKER_2"
+    STICKER_3 = "STICKER_3"
+    STICKER_4 = "STICKER_4"
+
+
+class DashboardStickerDayResponse(
+    BaseModel
+):
+    date: date
+
+    completed_count: int = Field(
+        ...,
+        ge=1,
+        le=4,
+    )
+
+    sticker_type: DashboardStickerType
+
+
+class DashboardCalendarResponse(
+    BaseModel
+):
+    year: int
+    month: int
+
+    stickers: list[
+        DashboardStickerDayResponse
+    ] = Field(
+        default_factory=list
+    )
