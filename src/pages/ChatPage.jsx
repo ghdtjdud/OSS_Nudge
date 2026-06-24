@@ -234,7 +234,89 @@ const [sending, setSending] = useState(false);
 const [errorMessage, setErrorMessage] = useState('');
 
 useEffect(() => {
-    const createChatSession = async () => {
+    const loadPreviousMessages = async (savedSessionId, token) => {
+        const response = await fetch(
+            `${API_BASE_URL}/api/v1/chat/sessions/${savedSessionId}/messages`,
+            {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            }
+        );
+
+        const data = await response.json();
+
+        console.log('이전 채팅 메시지 조회 응답:', data);
+
+        if (!response.ok) {
+            throw new Error(
+                getErrorMessage(data, '이전 채팅 메시지를 불러오지 못했습니다.')
+            );
+        }
+
+        const rawMessages = data.messages || data.items || data || [];
+
+        const restoredMessages = rawMessages.map((message) => ({
+            role:
+                message.role === 'assistant' ||
+                message.sender === 'assistant' ||
+                message.role === 'ai'
+                    ? 'ai'
+                    : 'user',
+            text: getMessageText(message, '메시지를 불러왔습니다.'),
+        }));
+
+        setSessionId(savedSessionId);
+        setMessages(restoredMessages);
+    };
+
+    const createChatSession = async (token) => {
+        const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+        });
+
+        const data = await response.json();
+
+        console.log('채팅 세션 생성 응답:', data);
+
+        if (!response.ok) {
+            throw new Error(
+                getErrorMessage(data, '채팅 세션 생성에 실패했습니다.')
+            );
+        }
+
+        const newSessionId = getSessionId(data);
+
+        const initialMessage = getMessageText(
+            data.initial_message ||
+                data.initialMessage ||
+                data.message ||
+                data.assistant_message ||
+                data.assistantMessage,
+            '오늘은 어떤 하루를 보내고 계신가요?'
+        );
+
+        if (!newSessionId) {
+            throw new Error('채팅 세션 ID를 찾을 수 없습니다.');
+        }
+
+        setSessionId(newSessionId);
+        localStorage.setItem('chatSessionId', newSessionId);
+
+        setMessages([
+            {
+                role: 'ai',
+                text: initialMessage,
+            },
+        ]);
+    };
+
+    const initChatSession = async () => {
         if (hasCreatedSession.current) return;
         hasCreatedSession.current = true;
 
@@ -243,51 +325,21 @@ useEffect(() => {
             setErrorMessage('');
 
             const token = localStorage.getItem('access_token');
+            const savedSessionId = localStorage.getItem('chatSessionId');
 
-            const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-
-            const data = await response.json();
-
-            console.log('채팅 세션 생성 응답:', data);
-
-            if (!response.ok) {
-                throw new Error(
-                    getErrorMessage(data, '채팅 세션 생성에 실패했습니다.')
-                );
+            if (savedSessionId) {
+                try {
+                    await loadPreviousMessages(savedSessionId, token);
+                    return;
+                } catch (error) {
+                    console.warn('이전 채팅 불러오기 실패, 새 세션 생성:', error);
+                    localStorage.removeItem('chatSessionId');
+                }
             }
 
-            const newSessionId = getSessionId(data);
-
-            const initialMessage = getMessageText(
-                data.initial_message ||
-                    data.initialMessage ||
-                    data.message ||
-                    data.assistant_message ||
-                    data.assistantMessage,
-                '오늘은 어떤 하루를 보내고 계신가요?'
-            );
-
-            if (!newSessionId) {
-                throw new Error('채팅 세션 ID를 찾을 수 없습니다.');
-            }
-
-            setSessionId(newSessionId);
-            localStorage.setItem('chatSessionId', newSessionId);
-
-            setMessages([
-                {
-                    role: 'ai',
-                    text: initialMessage,
-                },
-            ]);
+            await createChatSession(token);
         } catch (error) {
-            console.error('채팅 세션 생성 실패:', error);
+            console.error('채팅 세션 초기화 실패:', error);
 
             setErrorMessage(error.message || '채팅 세션을 생성하지 못했습니다.');
             setMessages([
@@ -301,7 +353,7 @@ useEffect(() => {
         }
     };
 
-    createChatSession();
+    initChatSession();
 
     return () => {
         if (streamRef.current) {
