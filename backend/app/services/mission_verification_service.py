@@ -42,12 +42,73 @@ YOLO_DEVICE = os.getenv(
     "cpu",
 )
 
+# 특정 클래스 설정이 없을 때 사용하는
+# 최종 매칭 기본 confidence
 YOLO_CONFIDENCE = float(
     os.getenv(
         "YOLO_CONFIDENCE",
-        "0.60",
+        "0.45",
     )
 )
+
+
+# 모델에서 탐지 결과를 받아오기 위한
+# 낮은 1차 confidence
+#
+# 이 값보다 낮으면 detected_objects에도 나오지 않는다.
+YOLO_INFERENCE_CONFIDENCE = float(
+    os.getenv(
+        "YOLO_INFERENCE_CONFIDENCE",
+        "0.15",
+    )
+)
+
+
+# 클래스별 최종 성공 판정 confidence
+YOLO_CLASS_CONFIDENCE = {
+    # 컵은 현재 잘 인식되므로
+    # 비교적 높은 기준을 유지
+    "cup": float(
+        os.getenv(
+            "YOLO_CUP_CONFIDENCE",
+            "0.55",
+        )
+    ),
+
+    # 칫솔은 가늘고 작아서 기준을 낮춤
+    "toothbrush": float(
+        os.getenv(
+            "YOLO_TOOTHBRUSH_CONFIDENCE",
+            "0.25",
+        )
+    ),
+
+    # 밥그릇
+    "bowl": float(
+        os.getenv(
+            "YOLO_BOWL_CONFIDENCE",
+            "0.30",
+        )
+    ),
+
+    # 숟가락·젓가락 등은 작고 가늘기 때문에
+    # 가장 낮은 기준 적용
+    "utensil": float(
+        os.getenv(
+            "YOLO_UTENSIL_CONFIDENCE",
+            "0.20",
+        )
+    ),
+
+    # 약은 오탐 위험이 있으므로
+    # 너무 낮추지 않음
+    "pill": float(
+        os.getenv(
+            "YOLO_PILL_CONFIDENCE",
+            "0.45",
+        )
+    ),
+}
 
 YOLO_IMAGE_SIZE = int(
     os.getenv(
@@ -299,7 +360,7 @@ def run_detection(
             prediction_results = (
                 model.predict(
                     source=image,
-                    conf=YOLO_CONFIDENCE,
+                    conf=YOLO_INFERENCE_CONFIDENCE,
                     imgsz=YOLO_IMAGE_SIZE,
                     device=YOLO_DEVICE,
                     verbose=False,
@@ -379,9 +440,22 @@ def run_detection(
             )
         )
 
+        confidence_value = float(
+            confidence
+        )
+
+        required_confidence = (
+            YOLO_CLASS_CONFIDENCE.get(
+                normalized_class_name,
+                YOLO_CONFIDENCE,
+            )
+        )
+
         is_expected = (
             normalized_class_name
             in expected_classes
+            and confidence_value
+            >= required_confidence
         )
 
         if is_expected:
@@ -391,7 +465,7 @@ def run_detection(
             "class_id": class_id,
             "class_name": raw_class_name,
             "confidence": round(
-                float(confidence),
+                confidence_value,
                 4,
             ),
             "matched": is_expected,
