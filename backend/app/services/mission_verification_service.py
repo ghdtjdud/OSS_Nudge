@@ -97,6 +97,7 @@ VERIFICATION_CLASS_MAP = {
     # 식사하기
     "FOOD": {
         "bowl",
+        "utensil",
     },
 
     # 약 복용하기
