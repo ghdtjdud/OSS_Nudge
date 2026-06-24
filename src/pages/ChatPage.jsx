@@ -1,125 +1,8 @@
-<<<<<<< HEAD
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import PageLayout from '../components/PageLayout';
-import Button from '../components/Button';
-
-const DUMMY_USER_TEXT = '나 오늘 물도 안마시고 기운이 없어';
-const AI_FOLLOW_UP = '많이 지쳐 보이네요. 지금은 작은 행동부터 시작해볼까요?';
-const AI_NUDGE = 'Nudge!';
-const DANGER_KEYWORDS = ['죽고 싶', '사라지고 싶', '자해', '끝내고 싶'];
-
-export default function ChatPage() {
-    const navigate = useNavigate();
-    const [userName, setUserName] = useState('사용자');
-    const [messages, setMessages] = useState([]);
-    const [listening, setListening] = useState(false);
-    const [actionCompleted, setActionCompleted] = useState(false);
-
-    useEffect(() => {
-        const storedUser = localStorage.getItem('userInfo');
-        let name = '사용자';
-
-        if (storedUser) {
-            try {
-                const parsed = JSON.parse(storedUser);
-                if (parsed?.name?.trim()) {
-                    name = parsed.name.trim();
-                }
-            } catch (error) {
-                // ignore invalid JSON
-            }
-        }
-
-        setUserName(name);
-        setMessages([{ role: 'ai', text: `${name}님 오늘 어떠세요?` }]);
-    }, []);
-
-    const handleVoiceClick = () => {
-        if (listening || actionCompleted) {
-            return;
-        }
-
-        setListening(true);
-
-        setTimeout(() => {
-            setMessages((prevMessages) => [
-                ...prevMessages,
-                { role: 'user', text: DUMMY_USER_TEXT },
-            ]);
-
-            localStorage.setItem(
-                'todayChat',
-                JSON.stringify({
-                    text: DUMMY_USER_TEXT,
-                    timestamp: new Date().toISOString(),
-                }),
-            );
-
-            setListening(false);
-            setActionCompleted(true);
-
-            const hasDangerKeyword = DANGER_KEYWORDS.some((keyword) =>
-                DUMMY_USER_TEXT.includes(keyword),
-            );
-
-            setTimeout(() => {
-                setMessages((prevMessages) => [
-                    ...prevMessages,
-                    { role: 'ai', text: AI_FOLLOW_UP },
-                ]);
-
-                setTimeout(() => {
-                    if (hasDangerKeyword) {
-                        navigate('/crisis');
-                        return;
-                    }
-
-                    setMessages((prevMessages) => [
-                        ...prevMessages,
-                        { role: 'ai', text: AI_NUDGE },
-                    ]);
-
-                    localStorage.setItem('recommendedMission', 'drink_water');
-
-                    setTimeout(() => {
-                        navigate('/mission');
-                    }, 3000);
-                }, 1000);
-            }, 1000);
-        }, 1000);
-    };
-
-    return (
-        <PageLayout>
-            <div className="chat-page">
-                <div className="chat-window">
-                    {messages.map((message, index) => (
-                        <div
-                            key={index}
-                            className={`chat-message chat-message--${message.role}`}
-                        >
-                            <div className="chat-bubble">{message.text}</div>
-                        </div>
-                    ))}
-
-                    <div className="chat-footer">
-                        <Button
-                            onClick={handleVoiceClick}
-                            className="voice-button"
-                            disabled={listening || actionCompleted}
-                        >
-                            {listening ? '듣는 중...' : '🎙️ 음성 입력'}
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        </PageLayout>
-    );
-=======
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageLayout from '../components/PageLayout'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 function getMessageText(message, fallback = '응답을 불러왔습니다.') {
 if (!message) return fallback
@@ -264,6 +147,24 @@ onEnd?.()
 window.speechSynthesis.speak(utterance)
 }
 
+function getErrorMessage(errorBody, fallbackMessage) {
+if (!errorBody) return fallbackMessage
+
+if (typeof errorBody.detail === 'string') {
+return errorBody.detail
+}
+
+if (Array.isArray(errorBody.detail)) {
+return JSON.stringify(errorBody.detail, null, 2)
+}
+
+if (typeof errorBody.message === 'string') {
+return errorBody.message
+}
+
+return JSON.stringify(errorBody, null, 2) || fallbackMessage
+}
+
 export default function ChatPage() {
 const navigate = useNavigate()
 
@@ -290,7 +191,7 @@ hasCreatedSession.current = true
 
     const token = localStorage.getItem('access_token')
 
-    const response = await fetch('http://localhost:8000/api/v1/chat/sessions', {
+    const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -303,7 +204,7 @@ hasCreatedSession.current = true
     console.log('채팅 세션 생성 응답:', data)
 
     if (!response.ok) {
-      throw new Error(JSON.stringify(data.detail || data, null, 2))
+      throw new Error(getErrorMessage(data, '채팅 세션 생성에 실패했습니다.'))
     }
 
     const newSessionId = getSessionId(data)
@@ -375,7 +276,7 @@ try {
   formData.append('audio', audioBlob, 'voice.webm')
 
   const response = await fetch(
-    `http://localhost:8000/api/v1/chat/sessions/${sessionId}/voice-messages`,
+    `${API_BASE_URL}/api/v1/chat/sessions/${sessionId}/voice-messages`,
     {
       method: 'POST',
       headers: {
@@ -390,7 +291,7 @@ try {
   console.log('음성 채팅 응답:', data)
 
   if (!response.ok) {
-    throw new Error(JSON.stringify(data.detail || data, null, 2))
+    throw new Error(getErrorMessage(data, '음성 메시지 전송에 실패했습니다.'))
   }
 
   const userText = getMessageText(
@@ -497,7 +398,6 @@ setErrorMessage('')
 } catch (error) {
   console.error('마이크 권한 오류:', error)
   alert('마이크 권한을 허용해주세요.')
->>>>>>> 909245a54ec2be43736ef616a7d463261d6c2484
 }
 
 }
@@ -555,7 +455,9 @@ return (
 
       {sending && (
         <div className="chat-message chat-message--ai">
-          <div className="chat-bubble">음성을 분석하고 답변을 생성하고 있어요...</div>
+          <div className="chat-bubble">
+            음성을 분석하고 답변을 생성하고 있어요...
+          </div>
         </div>
       )}
 
