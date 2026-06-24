@@ -476,3 +476,46 @@ class MedicationCheckLog(Base):
         DateTime,
         nullable=True,
     )
+
+class RevokedAccessToken(Base):
+    __tablename__ = (
+        "revoked_access_tokens"
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
+
+    user_id = Column(
+        BigInteger,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # JWT 원문은 저장하지 않고
+    # SHA-256 해시만 저장한다.
+    token_hash = Column(
+        String(64),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    expires_at = Column(
+        DateTime,
+        nullable=False,
+        index=True,
+    )
+
+    revoked_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )

@@ -327,6 +327,230 @@ class UserRoutineResponse(BaseModel):
     }
 
 # =========================================================
+# 마이페이지 관련 스키마
+# =========================================================
+
+class MyPageResponse(BaseModel):
+    user: UserResponse
+
+    routine_profile: Optional[
+        UserRoutineResponse
+    ] = None
+
+
+class MyPageUpdateRequest(BaseModel):
+    name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    email: Optional[EmailStr] = None
+
+    phone: Optional[str] = Field(
+        default=None,
+        min_length=10,
+        max_length=20,
+    )
+
+    guardian_phone: Optional[str] = Field(
+        default=None,
+        max_length=30,
+    )
+
+    # 이메일 변경 시에만 사용
+    current_password: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_update_name(
+        cls,
+        value: Optional[str],
+    ) -> Optional[str]:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError(
+                "이름을 입력해주세요."
+            )
+
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def normalize_update_email(
+        cls,
+        value: Optional[EmailStr],
+    ) -> Optional[str]:
+        if value is None:
+            return None
+
+        return str(value).strip().lower()
+
+    @field_validator("phone")
+    @classmethod
+    def validate_update_phone(
+        cls,
+        value: Optional[str],
+    ) -> Optional[str]:
+        if value is None:
+            return None
+
+        digits = re.sub(
+            r"\D",
+            "",
+            value,
+        )
+
+        if len(digits) not in (10, 11):
+            raise ValueError(
+                "전화번호는 숫자 기준 "
+                "10자리 또는 11자리여야 합니다."
+            )
+
+        return digits
+
+    @field_validator("guardian_phone")
+    @classmethod
+    def validate_update_guardian_phone(
+        cls,
+        value: Optional[str],
+    ) -> Optional[str]:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+
+        # 빈 문자열을 전송하면
+        # 보호자 연락처를 삭제한다.
+        if not normalized:
+            return None
+
+        digits = re.sub(
+            r"\D",
+            "",
+            normalized,
+        )
+
+        if len(digits) not in (10, 11):
+            raise ValueError(
+                "보호자 또는 주치의 연락처는 "
+                "숫자 기준 10자리 또는 "
+                "11자리여야 합니다."
+            )
+
+        return digits
+
+    @model_validator(mode="after")
+    def validate_update_fields(self):
+        editable_fields = {
+            "name",
+            "email",
+            "phone",
+            "guardian_phone",
+        }
+
+        if not (
+            self.model_fields_set
+            & editable_fields
+        ):
+            raise ValueError(
+                "수정할 회원정보를 "
+                "하나 이상 입력해주세요."
+            )
+
+        return self
+
+
+class AccountDeleteRequest(BaseModel):
+    current_password: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+    )
+
+    confirmation: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+    )
+
+    @field_validator("confirmation")
+    @classmethod
+    def validate_confirmation(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = value.strip()
+
+        if normalized != "회원탈퇴":
+            raise ValueError(
+                "회원 탈퇴를 진행하려면 "
+                "'회원탈퇴'를 입력해주세요."
+            )
+
+        return normalized
+
+
+class AccountDeleteResponse(BaseModel):
+    message: str
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+    )
+
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
+
+    new_password_confirm: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
+
+    @model_validator(mode="after")
+    def validate_new_password(self):
+        if (
+            self.new_password
+            != self.new_password_confirm
+        ):
+            raise ValueError(
+                "새 비밀번호와 "
+                "비밀번호 확인이 일치하지 않습니다."
+            )
+
+        if (
+            self.current_password
+            == self.new_password
+        ):
+            raise ValueError(
+                "새 비밀번호는 현재 비밀번호와 "
+                "다르게 설정해주세요."
+            )
+
+        return self
+
+
+class PasswordChangeResponse(BaseModel):
+    message: str
+
+class LogoutResponse(BaseModel):
+    message: str
+
+# =========================================================
 # 채팅 관련 스키마
 # =========================================================
 

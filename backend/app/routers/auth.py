@@ -4,6 +4,9 @@ from fastapi import (
     HTTPException,
     status,
 )
+from fastapi.security import (
+    HTTPAuthorizationCredentials,
+)
 from sqlalchemy.exc import (
     IntegrityError,
     SQLAlchemyError,
@@ -14,6 +17,7 @@ from backend.app.database import get_db
 from backend.app.models.models import User
 from backend.app.schemas.schemas import (
     LoginRequest,
+    LogoutResponse,
     SignupRequest,
     SignupResponse,
     TokenResponse,
@@ -23,6 +27,8 @@ from backend.app.services.auth_service import (
     create_access_token,
     get_current_user,
     hash_password,
+    revoke_access_token,
+    security,
     verify_password,
 )
 
@@ -185,3 +191,57 @@ def get_me(
     ),
 ):
     return current_user
+
+@router.post(
+    "/logout",
+    response_model=LogoutResponse,
+    status_code=status.HTTP_200_OK,
+)
+def logout(
+    credentials: (
+        HTTPAuthorizationCredentials
+    ) = Depends(security),
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    현재 요청에 사용된 JWT를 폐기한다.
+
+    다른 기기나 다른 로그인 세션에서
+    발급받은 토큰은 유지된다.
+    """
+
+    try:
+        revoke_access_token(
+            token=credentials.credentials,
+            user_id=current_user.id,
+            db=db,
+        )
+
+        db.commit()
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "로그아웃 처리 중 "
+                "오류가 발생했습니다."
+            ),
+        ) from exc
+
+    return {
+        "message": (
+            "로그아웃되었습니다."
+        )
+    }
