@@ -27,6 +27,25 @@ router = APIRouter(
 )
 
 
+def build_routine_response(
+    profile: UserRoutineProfile,
+) -> UserRoutineResponse:
+    return UserRoutineResponse(
+        user_id=profile.user_id,
+        sleep_bedtime=profile.sleep_bedtime,
+        sleep_duration=profile.sleep_duration,
+        meal_regularity=profile.meal_regularity,
+        medication_status=profile.medication_status,
+        medication_times=profile.medication_times,
+        activity_start_difficulty=(
+            profile.activity_start_difficulty
+        ),
+        onboarding_completed=True,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+    )
+
+
 @router.put(
     "/me/status",
     response_model=UserRoutineResponse,
@@ -39,14 +58,7 @@ def save_user_status(
     ),
     db: Session = Depends(get_db),
 ):
-    """
-    사용자 상태정보 최초 저장 및 재수정 API.
-
-    상태정보가 없으면 새로 생성하고,
-    이미 있으면 기존 정보를 덮어쓴다.
-    """
-
-    routine_profile = (
+    profile = (
         db.query(UserRoutineProfile)
         .filter(
             UserRoutineProfile.user_id
@@ -55,30 +67,31 @@ def save_user_status(
         .first()
     )
 
-    # Enum 객체를 실제 문자열로 변환
+    # Enum을 JSON에 저장할 수 있는 문자열 값으로 변환
     request_data = request.model_dump(
         mode="json"
     )
 
-    if routine_profile is None:
-        routine_profile = UserRoutineProfile(
+    if profile is None:
+        profile = UserRoutineProfile(
             user_id=current_user.id,
             **request_data,
         )
-
-        db.add(routine_profile)
+        db.add(profile)
 
     else:
-        for field_name, value in request_data.items():
+        for field_name, value in (
+            request_data.items()
+        ):
             setattr(
-                routine_profile,
+                profile,
                 field_name,
                 value,
             )
 
     try:
         db.commit()
-        db.refresh(routine_profile)
+        db.refresh(profile)
 
     except SQLAlchemyError as exc:
         db.rollback()
@@ -93,46 +106,12 @@ def save_user_status(
             ),
         ) from exc
 
-    return UserRoutineResponse(
-        user_id=routine_profile.user_id,
-        sleep_bedtime=(
-            routine_profile.sleep_bedtime
-        ),
-        sleep_duration=(
-            routine_profile.sleep_duration
-        ),
-        sleep_condition=(
-            routine_profile.sleep_condition
-        ),
-        breakfast_frequency=(
-            routine_profile.breakfast_frequency
-        ),
-        lunch_dinner_pattern=(
-            routine_profile.lunch_dinner_pattern
-        ),
-        appetite_change=(
-            routine_profile.appetite_change
-        ),
-        medication_status=(
-            routine_profile.medication_status
-        ),
-        medication_timing=(
-            routine_profile.medication_timing
-        ),
-        medication_forget_frequency=(
-            routine_profile
-            .medication_forget_frequency
-        ),
-        onboarding_completed=True,
-        created_at=routine_profile.created_at,
-        updated_at=routine_profile.updated_at,
-    )
+    return build_routine_response(profile)
 
 
 @router.get(
     "/me/status",
     response_model=UserRoutineResponse,
-    status_code=status.HTTP_200_OK,
 )
 def get_user_status(
     current_user: User = Depends(
@@ -140,11 +119,7 @@ def get_user_status(
     ),
     db: Session = Depends(get_db),
 ):
-    """
-    로그인한 사용자의 상태정보 조회 API.
-    """
-
-    routine_profile = (
+    profile = (
         db.query(UserRoutineProfile)
         .filter(
             UserRoutineProfile.user_id
@@ -153,7 +128,7 @@ def get_user_status(
         .first()
     )
 
-    if routine_profile is None:
+    if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
@@ -162,37 +137,4 @@ def get_user_status(
             ),
         )
 
-    return UserRoutineResponse(
-        user_id=routine_profile.user_id,
-        sleep_bedtime=(
-            routine_profile.sleep_bedtime
-        ),
-        sleep_duration=(
-            routine_profile.sleep_duration
-        ),
-        sleep_condition=(
-            routine_profile.sleep_condition
-        ),
-        breakfast_frequency=(
-            routine_profile.breakfast_frequency
-        ),
-        lunch_dinner_pattern=(
-            routine_profile.lunch_dinner_pattern
-        ),
-        appetite_change=(
-            routine_profile.appetite_change
-        ),
-        medication_status=(
-            routine_profile.medication_status
-        ),
-        medication_timing=(
-            routine_profile.medication_timing
-        ),
-        medication_forget_frequency=(
-            routine_profile
-            .medication_forget_frequency
-        ),
-        onboarding_completed=True,
-        created_at=routine_profile.created_at,
-        updated_at=routine_profile.updated_at,
-    )
+    return build_routine_response(profile)
