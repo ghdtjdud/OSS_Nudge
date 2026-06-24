@@ -1,28 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import PageLayout from '../components/PageLayout'
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import PageLayout from '../components/PageLayout';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 function getMessageText(message, fallback = '응답을 불러왔습니다.') {
-if (!message) return fallback
+if (!message) return fallback;
 
 if (typeof message === 'string') {
-return message
+    return message;
 }
 
 if (typeof message === 'object') {
-return (
-message.content ||
-message.text ||
-message.message ||
-message.assistant_message ||
-message.assistantMessage ||
-fallback
-)
+    return (
+        message.content ||
+        message.text ||
+        message.message ||
+        message.assistant_message ||
+        message.assistantMessage ||
+        fallback
+    );
 }
 
-return fallback
+return fallback;
+
 }
 
 function getSessionId(response) {
@@ -32,441 +33,507 @@ response.sessionId ||
 response.id ||
 response.session?.id ||
 response.chat_session?.id
-)
+);
 }
 
 function getRecommendedMission(response) {
-return response.recommendedMission || response.recommended_mission || null
+return response.recommendedMission || response.recommended_mission || null;
+}
+
+function getCrisisSupport(response) {
+return response.crisisSupport || response.crisis_support || null;
+}
+
+function shouldOpenCrisis(response) {
+return (
+response.action === 'OPEN_CRISIS_SUPPORT' ||
+response.shouldNavigateToCrisis === true ||
+response.should_navigate_to_crisis === true ||
+response.next_screen === 'CRISIS_SUPPORT' ||
+response.nextScreen === 'CRISIS_SUPPORT'
+);
 }
 
 function shouldOpenMission(response) {
-const recommendedMission = getRecommendedMission(response)
+const recommendedMission = getRecommendedMission(response);
 
 return (
-response.action === 'OPEN_MISSION_VERIFICATION' &&
-(response.shouldNavigateToMission === true ||
-response.should_navigate_to_mission === true) &&
-recommendedMission !== null
-)
+    response.action === 'OPEN_MISSION_VERIFICATION' &&
+    (response.shouldNavigateToMission === true ||
+        response.should_navigate_to_mission === true) &&
+    recommendedMission !== null
+);
+
+}
+
+function clearMissionStorage() {
+localStorage.removeItem('recommendedMission');
+localStorage.removeItem('selectedMission');
+localStorage.removeItem('userMissionId');
+localStorage.removeItem('verificationCode');
+localStorage.removeItem('missionResult');
+localStorage.removeItem('missionFeedback');
+}
+
+function saveCrisisData(response) {
+const crisisSupport = getCrisisSupport(response);
+
+if (crisisSupport) {
+    localStorage.setItem('crisisSupport', JSON.stringify(crisisSupport));
+}
+
+localStorage.setItem('crisisReason', response.crisis_reason || '');
+localStorage.setItem(
+    'crisisDetectionStage',
+    response.crisis_detection_stage || ''
+);
+localStorage.setItem(
+    'crisisSignals',
+    JSON.stringify(response.crisis_signals || [])
+);
+
+console.log('저장된 위기 지원 데이터:', {
+    crisisSupport,
+    crisis_reason: response.crisis_reason,
+    crisis_detection_stage: response.crisis_detection_stage,
+    crisis_signals: response.crisis_signals,
+});
+
 }
 
 function saveMissionData(response) {
-const recommendedMission = getRecommendedMission(response)
+const recommendedMission = getRecommendedMission(response);
 
-if (!recommendedMission) return
+if (!recommendedMission) return;
 
 const missionData = {
-...recommendedMission,
+    ...recommendedMission,
 
-card_title:
-  recommendedMission.card_title ||
-  response.card_title ||
-  recommendedMission.cardTitle ||
-  response.cardTitle,
+    card_title:
+        recommendedMission.card_title ||
+        response.card_title ||
+        recommendedMission.cardTitle ||
+        response.cardTitle,
 
-card_subtitle:
-  recommendedMission.card_subtitle ||
-  response.card_subtitle ||
-  recommendedMission.cardSubtitle ||
-  response.cardSubtitle,
+    card_subtitle:
+        recommendedMission.card_subtitle ||
+        response.card_subtitle ||
+        recommendedMission.cardSubtitle ||
+        response.cardSubtitle,
 
-verification_title:
-  recommendedMission.verification_title ||
-  response.verification_title ||
-  recommendedMission.verificationTitle ||
-  response.verificationTitle,
+    verification_title:
+        recommendedMission.verification_title ||
+        response.verification_title ||
+        recommendedMission.verificationTitle ||
+        response.verificationTitle,
 
-verification_subtitle:
-  recommendedMission.verification_subtitle ||
-  response.verification_subtitle ||
-  recommendedMission.verificationSubtitle ||
-  response.verificationSubtitle,
+    verification_subtitle:
+        recommendedMission.verification_subtitle ||
+        response.verification_subtitle ||
+        recommendedMission.verificationSubtitle ||
+        response.verificationSubtitle,
 
-user_mission_id:
-  recommendedMission.user_mission_id ||
-  response.user_mission_id ||
-  recommendedMission.userMissionId ||
-  response.userMissionId,
+    user_mission_id:
+        recommendedMission.user_mission_id ||
+        response.user_mission_id ||
+        recommendedMission.userMissionId ||
+        response.userMissionId,
 
-mission_code:
-  recommendedMission.mission_code ||
-  response.mission_code ||
-  recommendedMission.missionCode ||
-  response.missionCode,
+    mission_code:
+        recommendedMission.mission_code ||
+        response.mission_code ||
+        recommendedMission.missionCode ||
+        response.missionCode,
 
-verification_code:
-  recommendedMission.verification_code ||
-  response.verification_code ||
-  recommendedMission.verificationCode ||
-  response.verificationCode,
+    verification_code:
+        recommendedMission.verification_code ||
+        response.verification_code ||
+        recommendedMission.verificationCode ||
+        response.verificationCode,
 
-instance_key:
-  recommendedMission.instance_key ||
-  response.instance_key ||
-  recommendedMission.instanceKey ||
-  response.instanceKey,
+    instance_key:
+        recommendedMission.instance_key ||
+        response.instance_key ||
+        recommendedMission.instanceKey ||
+        response.instanceKey,
 
-status: recommendedMission.status || response.status,
-title: recommendedMission.title || response.title,
-description: recommendedMission.description || response.description,
-reason: recommendedMission.reason || response.reason,
+    status: recommendedMission.status || response.status,
+    title: recommendedMission.title || response.title,
+    description: recommendedMission.description || response.description,
+    reason: recommendedMission.reason || response.reason,
 
-mission_type:
-  recommendedMission.mission_type ||
-  response.mission_type ||
-  recommendedMission.missionType ||
-  response.missionType,
+    mission_type:
+        recommendedMission.mission_type ||
+        response.mission_type ||
+        recommendedMission.missionType ||
+        response.missionType,
+};
 
-}
+localStorage.setItem('recommendedMission', JSON.stringify(missionData));
+console.log('저장된 미션 데이터:', missionData);
 
-localStorage.setItem('recommendedMission', JSON.stringify(missionData))
-console.log('저장된 미션 데이터:', missionData)
 }
 
 function speakText(text, onEnd) {
 if (!text || !window.speechSynthesis) {
-onEnd?.()
-return
+onEnd?.();
+return;
 }
 
-window.speechSynthesis.cancel()
+window.speechSynthesis.cancel();
 
-const utterance = new SpeechSynthesisUtterance(text)
-utterance.lang = 'ko-KR'
-utterance.rate = 1
-utterance.pitch = 1
+const utterance = new SpeechSynthesisUtterance(text);
+utterance.lang = 'ko-KR';
+utterance.rate = 1;
+utterance.pitch = 1;
 
 utterance.onend = () => {
-onEnd?.()
-}
+    onEnd?.();
+};
 
 utterance.onerror = () => {
-onEnd?.()
-}
+    onEnd?.();
+};
 
-window.speechSynthesis.speak(utterance)
+window.speechSynthesis.speak(utterance);
+
 }
 
 function getErrorMessage(errorBody, fallbackMessage) {
-if (!errorBody) return fallbackMessage
+if (!errorBody) return fallbackMessage;
 
 if (typeof errorBody.detail === 'string') {
-return errorBody.detail
+    return errorBody.detail;
 }
 
 if (Array.isArray(errorBody.detail)) {
-return JSON.stringify(errorBody.detail, null, 2)
+    return JSON.stringify(errorBody.detail, null, 2);
 }
 
 if (typeof errorBody.message === 'string') {
-return errorBody.message
+    return errorBody.message;
 }
 
-return JSON.stringify(errorBody, null, 2) || fallbackMessage
+return JSON.stringify(errorBody, null, 2) || fallbackMessage;
+
 }
 
 export default function ChatPage() {
-const navigate = useNavigate()
+const navigate = useNavigate();
 
-const hasCreatedSession = useRef(false)
-const mediaRecorderRef = useRef(null)
-const audioChunksRef = useRef([])
-const streamRef = useRef(null)
+const hasCreatedSession = useRef(false);
+const mediaRecorderRef = useRef(null);
+const audioChunksRef = useRef([]);
+const streamRef = useRef(null);
 
-const [messages, setMessages] = useState([])
-const [sessionId, setSessionId] = useState(null)
-const [loading, setLoading] = useState(true)
-const [recording, setRecording] = useState(false)
-const [sending, setSending] = useState(false)
-const [errorMessage, setErrorMessage] = useState('')
+const [messages, setMessages] = useState([]);
+const [sessionId, setSessionId] = useState(null);
+const [loading, setLoading] = useState(true);
+const [recording, setRecording] = useState(false);
+const [sending, setSending] = useState(false);
+const [errorMessage, setErrorMessage] = useState('');
 
 useEffect(() => {
-const createChatSession = async () => {
-if (hasCreatedSession.current) return
-hasCreatedSession.current = true
+    const createChatSession = async () => {
+        if (hasCreatedSession.current) return;
+        hasCreatedSession.current = true;
 
-  try {
-    setLoading(true)
-    setErrorMessage('')
+        try {
+            setLoading(true);
+            setErrorMessage('');
 
-    const token = localStorage.getItem('access_token')
+            const token = localStorage.getItem('access_token');
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    })
+            const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+            });
 
-    const data = await response.json()
+            const data = await response.json();
 
-    console.log('채팅 세션 생성 응답:', data)
+            console.log('채팅 세션 생성 응답:', data);
 
-    if (!response.ok) {
-      throw new Error(getErrorMessage(data, '채팅 세션 생성에 실패했습니다.'))
+            if (!response.ok) {
+                throw new Error(
+                    getErrorMessage(data, '채팅 세션 생성에 실패했습니다.')
+                );
+            }
+
+            const newSessionId = getSessionId(data);
+
+            const initialMessage = getMessageText(
+                data.initial_message ||
+                    data.initialMessage ||
+                    data.message ||
+                    data.assistant_message ||
+                    data.assistantMessage,
+                '오늘은 어떤 하루를 보내고 계신가요?'
+            );
+
+            if (!newSessionId) {
+                throw new Error('채팅 세션 ID를 찾을 수 없습니다.');
+            }
+
+            setSessionId(newSessionId);
+            localStorage.setItem('chatSessionId', newSessionId);
+
+            setMessages([
+                {
+                    role: 'ai',
+                    text: initialMessage,
+                },
+            ]);
+        } catch (error) {
+            console.error('채팅 세션 생성 실패:', error);
+
+            setErrorMessage(error.message || '채팅 세션을 생성하지 못했습니다.');
+            setMessages([
+                {
+                    role: 'ai',
+                    text: '채팅을 불러오지 못했어요. 잠시 후 다시 시도해주세요.',
+                },
+            ]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    createChatSession();
+
+    return () => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop());
+        }
+
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+    };
+}, []);
+
+const handleChatResponse = (data, userText, assistantText) => {
+    setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+            role: 'user',
+            text: userText,
+        },
+        {
+            role: 'ai',
+            text: assistantText,
+        },
+    ]);
+
+    localStorage.setItem(
+        'todayChat',
+        JSON.stringify({
+            text: userText,
+            timestamp: new Date().toISOString(),
+        })
+    );
+
+    // 1순위: HIGH 위기 응답 처리
+    // MEDIUM은 should_navigate_to_crisis가 false이므로 여기서 이동하지 않는다.
+    if (shouldOpenCrisis(data)) {
+        clearMissionStorage();
+        saveCrisisData(data);
+
+        navigate('/crisis');
+        return;
     }
 
-    const newSessionId = getSessionId(data)
+    // 2순위: 미션 이동 처리
+    if (shouldOpenMission(data)) {
+        saveMissionData(data);
 
-    const initialMessage = getMessageText(
-      data.initial_message ||
-        data.initialMessage ||
-        data.message ||
-        data.assistant_message ||
-        data.assistantMessage,
-      '오늘은 어떤 하루를 보내고 계신가요?'
-    )
+        speakText(assistantText, () => {
+            setTimeout(() => {
+                navigate('/mission');
+            }, 500);
+        });
 
-    if (!newSessionId) {
-      throw new Error('채팅 세션 ID를 찾을 수 없습니다.')
+        return;
     }
 
-    setSessionId(newSessionId)
-    localStorage.setItem('chatSessionId', newSessionId)
-
-    setMessages([
-      {
-        role: 'ai',
-        text: initialMessage,
-      },
-    ])
-  } catch (error) {
-    console.error('채팅 세션 생성 실패:', error)
-
-    setErrorMessage(error.message || '채팅 세션을 생성하지 못했습니다.')
-    setMessages([
-      {
-        role: 'ai',
-        text: '채팅을 불러오지 못했어요. 잠시 후 다시 시도해주세요.',
-      },
-    ])
-  } finally {
-    setLoading(false)
-  }
-}
-
-createChatSession()
-
-return () => {
-  if (streamRef.current) {
-    streamRef.current.getTracks().forEach((track) => track.stop())
-  }
-
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel()
-  }
-}
-
-}, [])
+    // 3순위: 일반 채팅 또는 MEDIUM 안전 확인 질문
+    speakText(assistantText);
+};
 
 const sendVoiceMessage = async (audioBlob) => {
-if (!sessionId) {
-alert('채팅 세션이 아직 준비되지 않았습니다.')
-return
-}
-
-setSending(true)
-setErrorMessage('')
-
-try {
-  const token = localStorage.getItem('access_token')
-
-  const formData = new FormData()
-  formData.append('audio', audioBlob, 'voice.webm')
-
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/chat/sessions/${sessionId}/voice-messages`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
+    if (!sessionId) {
+        alert('채팅 세션이 아직 준비되지 않았습니다.');
+        return;
     }
-  )
 
-  const data = await response.json()
+    setSending(true);
+    setErrorMessage('');
 
-  console.log('음성 채팅 응답:', data)
+    try {
+        const token = localStorage.getItem('access_token');
 
-  if (!response.ok) {
-    throw new Error(getErrorMessage(data, '음성 메시지 전송에 실패했습니다.'))
-  }
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'voice.webm');
 
-  const userText = getMessageText(
-    data.user_message || data.userMessage,
-    '음성 입력을 인식했습니다.'
-  )
+        const response = await fetch(
+            `${API_BASE_URL}/api/v1/chat/sessions/${sessionId}/voice-messages`,
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                body: formData,
+            }
+        );
 
-  const assistantText = getMessageText(
-    data.assistant_message || data.assistantMessage || data.message,
-    '응답을 불러왔습니다.'
-  )
+        const data = await response.json();
 
-  setMessages((prevMessages) => [
-    ...prevMessages,
-    {
-      role: 'user',
-      text: userText,
-    },
-    {
-      role: 'ai',
-      text: assistantText,
-    },
-  ])
+        console.log('음성 채팅 응답:', data);
 
-  localStorage.setItem(
-    'todayChat',
-    JSON.stringify({
-      text: userText,
-      timestamp: new Date().toISOString(),
-    })
-  )
+        if (!response.ok) {
+            throw new Error(
+                getErrorMessage(data, '음성 메시지 전송에 실패했습니다.')
+            );
+        }
 
-  if (shouldOpenMission(data)) {
-    saveMissionData(data)
+        const userText = getMessageText(
+            data.user_message || data.userMessage,
+            '음성 입력을 인식했습니다.'
+        );
 
-    speakText(assistantText, () => {
-      setTimeout(() => {
-        navigate('/mission')
-      }, 500)
-    })
+        const assistantText = getMessageText(
+            data.assistant_message || data.assistantMessage || data.message,
+            '응답을 불러왔습니다.'
+        );
 
-    return
-  }
+        handleChatResponse(data, userText, assistantText);
+    } catch (error) {
+        console.error('음성 메시지 전송 실패:', error);
 
-  speakText(assistantText)
-} catch (error) {
-  console.error('음성 메시지 전송 실패:', error)
+        const message = error.message || '음성 메시지 전송에 실패했습니다.';
 
-  const message = error.message || '음성 메시지 전송에 실패했습니다.'
-
-  setErrorMessage(message)
-  setMessages((prevMessages) => [
-    ...prevMessages,
-    {
-      role: 'ai',
-      text: message,
-    },
-  ])
-} finally {
-  setSending(false)
-}
-
-}
+        setErrorMessage(message);
+        setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+                role: 'ai',
+                text: message,
+            },
+        ]);
+    } finally {
+        setSending(false);
+    }
+};
 
 const startRecording = async () => {
-try {
-setErrorMessage('')
+    try {
+        setErrorMessage('');
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  streamRef.current = stream
-  audioChunksRef.current = []
+        streamRef.current = stream;
+        audioChunksRef.current = [];
 
-  const mediaRecorder = new MediaRecorder(stream, {
-    mimeType: 'audio/webm',
-  })
+        const mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm',
+        });
 
-  mediaRecorderRef.current = mediaRecorder
+        mediaRecorderRef.current = mediaRecorder;
 
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data && event.data.size > 0) {
-      audioChunksRef.current.push(event.data)
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                audioChunksRef.current.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, {
+                type: 'audio/webm',
+            });
+
+            stream.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+
+            if (audioBlob.size === 0) {
+                alert('녹음된 음성이 없습니다. 다시 시도해주세요.');
+                return;
+            }
+
+            await sendVoiceMessage(audioBlob);
+        };
+
+        mediaRecorder.start();
+        setRecording(true);
+    } catch (error) {
+        console.error('마이크 권한 오류:', error);
+        alert('마이크 권한을 허용해주세요.');
     }
-  }
-
-  mediaRecorder.onstop = async () => {
-    const audioBlob = new Blob(audioChunksRef.current, {
-      type: 'audio/webm',
-    })
-
-    stream.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-
-    if (audioBlob.size === 0) {
-      alert('녹음된 음성이 없습니다. 다시 시도해주세요.')
-      return
-    }
-
-    await sendVoiceMessage(audioBlob)
-  }
-
-  mediaRecorder.start()
-  setRecording(true)
-} catch (error) {
-  console.error('마이크 권한 오류:', error)
-  alert('마이크 권한을 허용해주세요.')
-}
-
-}
+};
 
 const stopRecording = () => {
-const recorder = mediaRecorderRef.current
+    const recorder = mediaRecorderRef.current;
 
-if (recorder && recorder.state !== 'inactive') {
-  recorder.stop()
-}
+    if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
+    }
 
-setRecording(false)
-
-}
+    setRecording(false);
+};
 
 const handleVoiceClick = async () => {
-if (loading || sending) return
+    if (loading || sending) return;
 
-if (!sessionId) {
-  alert('채팅 세션이 아직 준비되지 않았습니다. 새로고침 후 다시 시도해주세요.')
-  return
-}
+    if (!sessionId) {
+        alert('채팅 세션이 아직 준비되지 않았습니다. 새로고침 후 다시 시도해주세요.');
+        return;
+    }
 
-if (recording) {
-  stopRecording()
-  return
-}
+    if (recording) {
+        stopRecording();
+        return;
+    }
 
-await startRecording()
-
-}
+    await startRecording();
+};
 
 const handleRetry = () => {
-window.location.reload()
-}
+    window.location.reload();
+};
 
 return (
-<PageLayout>
+    <PageLayout>
 <div className="chat-page">
-<div className="chat-window">
-{loading && (
-<div className="chat-message chat-message--ai">
-<div className="chat-bubble">채팅을 준비하고 있어요...</div>
-</div>
-)}
+  <div className="chat-window">
+    {loading && (
+      <div className="chat-message chat-message--ai">
+        <div className="chat-bubble">채팅을 준비하고 있어요...</div>
+      </div>
+    )}
 
-      {messages.map((message, index) => (
-        <div
-          key={index}
-          className={`chat-message chat-message--${message.role}`}
-        >
-          <div className="chat-bubble">{message.text}</div>
-        </div>
-      ))}
+    {messages.map((message, index) => (
+      <div
+        key={index}
+        className={`chat-message chat-message--${message.role}`}
+      >
+        <div className="chat-bubble">{message.text}</div>
+      </div>
+    ))}
 
-      {sending && (
-        <div className="chat-message chat-message--ai">
-          <div className="chat-bubble">
-            음성을 분석하고 답변을 생성하고 있어요...
-          </div>
+    {sending && (
+      <div className="chat-message chat-message--ai">
+        <div className="chat-bubble">
+          음성을 분석하고 답변을 생성하고 있어요...
         </div>
-      )}
+      </div>
+    )}
 
-      {errorMessage && (
-        <div className="chat-message chat-message--ai">
-          <div className="chat-bubble">오류: {errorMessage}</div>
-        </div>
-      )}
-    </div>
+    {errorMessage && (
+      <div className="chat-message chat-message--ai">
+        <div className="chat-bubble">오류: {errorMessage}</div>
+      </div>
+    )}
 
     <div className="chat-footer">
       <button
@@ -480,8 +547,8 @@ return (
           : sending
             ? '전송 중...'
             : recording
-              ? '⏹️ 녹음 종료'
-              : '🎙️ 음성 입력'}
+              ? '녹음 종료'
+              : '음성 입력'}
       </button>
 
       {errorMessage && (
@@ -496,7 +563,8 @@ return (
       )}
     </div>
   </div>
-</PageLayout>
+</div>
+    </PageLayout>
+);
 
-)
 }

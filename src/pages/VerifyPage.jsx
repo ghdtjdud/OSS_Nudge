@@ -323,7 +323,7 @@ return (
 <PageLayout>
 <div className="verify-page">
 <div className="verify-card">
-<h1 className="verify-title">미션 인증을 위한 웹캠 활성화</h1>
+<h1 className="verify-title">미션 인증</h1>
 
       <div className="verify-body">
         <div className="mission-label">
