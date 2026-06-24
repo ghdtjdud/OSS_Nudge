@@ -27,6 +27,7 @@ from backend.app.schemas.schemas import (
     ChatSessionCreateResponse,
     ChatSessionResponse,
     GeminiChatResult,
+    GeminiMedicationAnswer,
 )
 from backend.app.services.auth_service import (
     get_current_user,
@@ -51,6 +52,7 @@ from backend.app.services.mission_service import (
     assign_medication_mission,
     build_mission_ui_texts,
     get_active_user_mission,
+    has_fallback_general_mission_need,
     recommend_general_mission,
 )
 from backend.app.services.speech_service import (
@@ -69,6 +71,185 @@ router = APIRouter(
     prefix="/api/v1/chat",
     tags=["Chat"],
 )
+
+FALLBACK_MEDIUM_RISK_PATTERNS = (
+    "살기 싫",
+    "사라지고 싶",
+    "없어지고 싶",
+    "깨어나고 싶지 않",
+    "희망이 없",
+    "삶의 의미가 없",
+    "사는 의미가 없",
+    "모두에게 짐",
+    "버티기 힘들",
+    "견딜 수 없",
+)
+
+
+def build_fallback_chat_result(
+    *,
+    user_message: str,
+    recent_messages: list[
+        dict[str, str]
+    ],
+) -> GeminiChatResult:
+    """
+    Gemini 호출이 실패했을 때 사용하는
+    규칙 기반 채팅 결과다.
+
+    1차 급성 위기 규칙은 이 함수 전에
+    이미 실행된 상태다.
+    """
+
+    normalized = (
+        user_message
+        .strip()
+        .lower()
+    )
+
+    # HIGH까지는 아니지만
+    # 안전 확인이 필요한 표현
+    if any(
+        pattern in normalized
+        for pattern
+        in FALLBACK_MEDIUM_RISK_PATTERNS
+    ):
+        return GeminiChatResult(
+            reply=(
+                "지금 많이 버티기 어려운 상태로 "
+                "느껴져요. "
+                "혹시 지금 자신을 해칠 생각이나 "
+                "구체적인 계획이 있나요?"
+            ),
+            should_recommend_mission=False,
+            mission_context=None,
+            risk_level="MEDIUM",
+            immediate_danger=False,
+            crisis_signals=[],
+            crisis_reason=(
+                "Gemini 장애 중 규칙 기반으로 "
+                "정서적 위험 표현이 확인됨"
+            ),
+        )
+
+    mission_messages = (
+        recent_messages
+        + [
+            {
+                "role": "user",
+                "content": user_message,
+            }
+        ]
+    )
+
+    should_recommend = (
+        has_fallback_general_mission_need(
+            mission_messages
+        )
+    )
+
+    if should_recommend:
+        return GeminiChatResult(
+            reply=(
+                "요즘 작은 일상도 챙기기 "
+                "버거운 상태로 보여요. "
+                "지금 할 수 있는 가벼운 행동부터 "
+                "함께 시작해봐요."
+            ),
+            should_recommend_mission=True,
+            mission_context=(
+                "최근 대화에서 생활 관리의 "
+                "어려움 또는 기운 저하가 확인됨"
+            ),
+            risk_level="LOW",
+            immediate_danger=False,
+            crisis_signals=[],
+            crisis_reason=None,
+        )
+
+    return GeminiChatResult(
+        reply=(
+            "말해줘서 고마워요. "
+            "지금 느끼는 마음을 천천히 "
+            "이어 이야기해도 괜찮아요."
+        ),
+        should_recommend_mission=False,
+        mission_context=None,
+        risk_level="LOW",
+        immediate_danger=False,
+        crisis_signals=[],
+        crisis_reason=None,
+    )
+
+
+def generate_chat_result_with_fallback(
+    *,
+    user_message: str,
+    user_profile: dict | None,
+    recent_messages: list[
+        dict[str, str]
+    ],
+    current_time_context: dict,
+) -> tuple[
+    GeminiChatResult,
+    str,
+]:
+    """
+    Gemini를 우선 호출한다.
+
+    성공:
+    (Gemini 결과, "GEMINI")
+
+    실패:
+    (fallback 결과, "FALLBACK")
+    """
+
+    try:
+        result = (
+            generate_chat_response_with_gemini(
+                user_message=user_message,
+                user_profile=user_profile,
+                recent_messages=(
+                    recent_messages
+                ),
+                current_time_context=(
+                    current_time_context
+                ),
+            )
+        )
+
+        print(
+            "[AI SOURCE] CHAT=GEMINI",
+            f"risk={result.risk_level.value}",
+            "recommend=",
+            result.should_recommend_mission,
+        )
+
+        return (
+            result,
+            "GEMINI",
+        )
+
+    except GeminiServiceError as exc:
+        result = build_fallback_chat_result(
+            user_message=user_message,
+            recent_messages=(
+                recent_messages
+            ),
+        )
+
+        print(
+            "[AI SOURCE] CHAT=FALLBACK",
+            f"error={type(exc).__name__}",
+            f"risk={result.risk_level.value}",
+            "recommend=",
+            result.should_recommend_mission,
+        )
+
+        return (
+            result,
+            "FALLBACK",
+        )
 
 
 # Gemini 판단이 흔들리더라도
@@ -114,6 +295,82 @@ def should_force_general_mission(
         for trigger
         in LOW_ENERGY_TRIGGERS
     )
+
+MEDICATION_NOT_TAKEN_PATTERNS = (
+    "안 먹었",
+    "아직 안 먹",
+    "못 먹었",
+    "깜빡했",
+    "못 챙겼",
+    "복용 안 했",
+    "복용하지 않았",
+    "나중에 먹",
+    "지금 먹으려고",
+)
+
+MEDICATION_TAKEN_PATTERNS = (
+    "이미 먹었",
+    "방금 먹었",
+    "아까 먹었",
+    "먹었어",
+    "먹었어요",
+    "복용했",
+    "약 챙겼",
+)
+
+
+def classify_medication_answer_with_fallback(
+    user_message: str,
+) -> GeminiMedicationAnswer:
+    try:
+        result = classify_medication_answer(
+            user_message
+        )
+
+        print(
+            "[AI SOURCE] "
+            "MEDICATION_CLASSIFIER=GEMINI",
+            f"answer={result.answer.value}",
+        )
+
+        return result
+
+    except GeminiServiceError as exc:
+        normalized = (
+            user_message
+            .strip()
+            .lower()
+        )
+
+        # 반드시 부정 표현부터 검사해야 한다.
+        # "안 먹었어" 안에도 "먹었어"가 포함되기 때문
+        if any(
+            pattern in normalized
+            for pattern
+            in MEDICATION_NOT_TAKEN_PATTERNS
+        ):
+            answer = "NOT_TAKEN"
+
+        elif any(
+            pattern in normalized
+            for pattern
+            in MEDICATION_TAKEN_PATTERNS
+        ):
+            answer = "TAKEN"
+
+        else:
+            answer = "UNCLEAR"
+
+        print(
+            "[AI SOURCE] "
+            "MEDICATION_CLASSIFIER=FALLBACK",
+            f"answer={answer}",
+            f"error={type(exc).__name__}",
+        )
+
+        return GeminiMedicationAnswer(
+            answer=answer
+        )
 
 
 def combine_assistant_and_mission_text(
@@ -766,7 +1023,7 @@ def send_chat_message(
 
         if pending_check is not None:
             classification = (
-                classify_medication_answer(
+                classify_medication_answer_with_fallback(
                     request.content
                 )
             )
@@ -961,36 +1218,35 @@ def send_chat_message(
             # -----------------------------------------
             # 복약 여부 답변이 불분명함
             # -----------------------------------------
-            normal_result = (
-                generate_chat_response_with_gemini(
-                    user_message=(
-                        request.content
+            (
+                normal_result,
+                _,
+            ) = generate_chat_result_with_fallback(
+                user_message=(
+                    request.content
+                ),
+                user_profile=(
+                    build_chat_profile(
+                        profile
+                    )
+                ),
+                recent_messages=(
+                    recent_messages
+                ),
+                current_time_context={
+                    "timezone": (
+                        "Asia/Seoul"
                     ),
-                    user_profile=(
-                        build_chat_profile(
-                            profile
-                        )
+                    "datetime": (
+                        now_local.isoformat()
                     ),
-                    recent_messages=(
-                        recent_messages
+                    "time_slot": (
+                        pending_check.time_slot
                     ),
-                    current_time_context={
-                        "timezone": (
-                            "Asia/Seoul"
-                        ),
-                        "datetime": (
-                            now_local
-                            .isoformat()
-                        ),
-                        "time_slot": (
-                            pending_check
-                            .time_slot
-                        ),
-                        "medication_check_required": (
-                            True
-                        ),
-                    },
-                )
+                    "medication_check_required": (
+                        True
+                    ),
+                },
             )
 
             crisis_response = (
@@ -1010,6 +1266,29 @@ def send_chat_message(
             if crisis_response is not None:
                 return crisis_response
 
+            if (
+                normal_result
+                .risk_level
+                .value
+                != "LOW"
+            ):
+                return save_and_build_response(
+                    db=db,
+                    session_id=session_id,
+                    request=request,
+                    assistant_content=(
+                        normal_result.reply
+                    ),
+                    action="CHAT",
+                    medication_check_slot=None,
+                    should_recommend_mission=False,
+                    mission_context=None,
+                    risk_level=(
+                        normal_result.risk_level
+                    ),
+                    recommended_mission=None,
+                )
+            
             assistant_content = (
                 normal_result.reply
                 + "\n\n그리고 복약 여부도 "
@@ -1077,30 +1356,31 @@ def send_chat_message(
         # =============================================
         # 3. 사용자의 현재 메시지에 AI가 먼저 답변
         # =============================================
-        gemini_result = (
-            generate_chat_response_with_gemini(
-                user_message=request.content,
-                user_profile=(
-                    build_chat_profile(
-                        profile
-                    )
+        (
+            gemini_result,
+            chat_source,
+        ) = generate_chat_result_with_fallback(
+            user_message=request.content,
+            user_profile=(
+                build_chat_profile(
+                    profile
+                )
+            ),
+            recent_messages=(
+                recent_messages
+            ),
+            current_time_context={
+                "timezone": "Asia/Seoul",
+                "datetime": (
+                    now_local.isoformat()
                 ),
-                recent_messages=(
-                    recent_messages
+                "time_slot": (
+                    due_slot or "NONE"
                 ),
-                current_time_context={
-                    "timezone": "Asia/Seoul",
-                    "datetime": (
-                        now_local.isoformat()
-                    ),
-                    "time_slot": (
-                        due_slot or "NONE"
-                    ),
-                    "medication_check_required": (
-                        should_ask_medication
-                    ),
-                },
-            )
+                "medication_check_required": (
+                    should_ask_medication
+                ),
+            },
         )
 
         crisis_response = (
@@ -1132,7 +1412,7 @@ def send_chat_message(
             should_ask_medication
             and gemini_result
             .risk_level.value
-            != "HIGH"
+            == "LOW"
         ):
             create_medication_check(
                 db=db,
@@ -1180,11 +1460,35 @@ def send_chat_message(
         # =============================================
         recommended_mission = None
 
-        force_general_mission = (
-            should_force_general_mission(
-                request.content
-            )
+        mission_messages = (
+            recent_messages
+            + [
+                {
+                    "role": "user",
+                    "content": (
+                        request.content
+                    ),
+                }
+            ]
         )
+
+        if chat_source == "FALLBACK":
+            # Gemini 채팅 호출이 실패한 경우에만
+            # 최근 대화 문맥 기반 fallback을 사용한다.
+            force_general_mission = (
+                has_fallback_general_mission_need(
+                    mission_messages
+                )
+            )
+
+        else:
+            # Gemini가 정상인 경우에는
+            # 기존 코드의 최소 강제 트리거만 유지한다.
+            force_general_mission = (
+                should_force_general_mission(
+                    request.content
+                )
+            )
 
         if (
             active_mission is None
@@ -1197,18 +1501,6 @@ def send_chat_message(
             .risk_level.value
             == "LOW"
         ):
-            mission_messages = (
-                recent_messages
-                + [
-                    {
-                        "role": "user",
-                        "content": (
-                            request.content
-                        ),
-                    }
-                ]
-            )
-
             recommended_mission = (
                 recommend_general_mission(
                     db=db,
