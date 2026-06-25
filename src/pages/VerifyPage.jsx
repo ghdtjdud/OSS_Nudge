@@ -20,11 +20,11 @@ const MISSION_TARGETS = {
 DRINK_WATER: 'cup',
 BRUSH_TEETH: 'toothbrush',
 TAKE_MEDICATION: 'pill',
-EAT_MEAL: 'bowl',
+EAT_MEAL: 'bowl, utensil',
 drink_water: 'cup',
 brush_teeth: 'toothbrush',
 take_medicine: 'pill',
-eat_meal: 'bowl',
+eat_meal: 'bowl, utensil',
 }
 
 function getErrorMessage(errorBody, fallbackMessage) {
