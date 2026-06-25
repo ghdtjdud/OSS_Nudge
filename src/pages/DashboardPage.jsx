@@ -11,6 +11,105 @@ const stickerImageMap = {
   STICKER_4: 'public/stickers/sticker-4-flower-bouquet.png',
 }
 
+const USE_MOCK_STICKERS = true
+const MOCK_STICKER_COUNT = 12
+
+function createSeededRandom(seed) {
+  let value = seed >>> 0
+
+  return () => {
+    value = (
+      value * 1664525 +
+      1013904223
+    ) >>> 0
+
+    return value / 4294967296
+  }
+}
+
+function getMockStickers(year, month) {
+  const today = new Date()
+
+  const currentYear = today.getFullYear()
+  const currentMonth = today.getMonth() + 1
+  const currentDay = today.getDate()
+
+  const selectedMonthValue = year * 100 + month
+  const currentMonthValue = currentYear * 100 + currentMonth
+
+  // 미래 월에는 가짜 스티커 없음
+  if (selectedMonthValue > currentMonthValue) {
+    return []
+  }
+
+  const lastDayOfMonth = new Date(
+    year,
+    month,
+    0
+  ).getDate()
+
+  // 현재 월은 어제까지만 가짜 데이터 생성
+  // 오늘 데이터는 실제 백엔드 데이터를 사용
+  const maxAvailableDay =
+    selectedMonthValue === currentMonthValue
+      ? currentDay - 1
+      : lastDayOfMonth
+
+  if (maxAvailableDay <= 0) {
+    return []
+  }
+
+  const random = createSeededRandom(
+    year * 100 + month
+  )
+
+  const availableDays = Array.from(
+    { length: maxAvailableDay },
+    (_, index) => index + 1
+  )
+
+  const selectedDays = []
+
+  const stickerCount = Math.min(
+    MOCK_STICKER_COUNT,
+    availableDays.length
+  )
+
+  for (
+    let index = 0;
+    index < stickerCount;
+    index += 1
+  ) {
+    const randomIndex = Math.floor(
+      random() * availableDays.length
+    )
+
+    const [selectedDay] = availableDays.splice(
+      randomIndex,
+      1
+    )
+
+    selectedDays.push(selectedDay)
+  }
+
+  return selectedDays
+    .sort((a, b) => a - b)
+    .map((day) => {
+      const completedCount =
+        Math.floor(random() * 4) + 1
+
+      return {
+        date: toDateString(
+          year,
+          month,
+          day
+        ),
+        completed_count: completedCount,
+        sticker_type: `STICKER_${completedCount}`,
+      }
+    })
+}
+
 const WEEK_DAYS = ['일', '월', '화', '수', '목', '금', '토']
 
 function padNumber(value) {
@@ -70,24 +169,82 @@ export default function DashboardPage() {
     }, {})
   }, [stickers])
 
-  const fetchCalendar = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      setErrorMessage('')
+const fetchCalendar = useCallback(async () => {
+  const mockStickers = USE_MOCK_STICKERS
+    ? getMockStickers(year, month)
+    : []
 
-      const data = await authFetch(
-        `/api/v1/dashboard/calendar?year=${year}&month=${month}`
-      )
+  try {
+    setIsLoading(true)
+    setErrorMessage('')
 
-      setStickers(data.stickers || [])
-    } catch (error) {
-      console.error('대시보드 캘린더 조회 실패:', error)
-      setErrorMessage(error.message || '캘린더 기록을 불러오지 못했습니다.')
-      setStickers([])
-    } finally {
-      setIsLoading(false)
+    // 실제 백엔드 데이터는 항상 조회
+    const data = await authFetch(
+      `/api/v1/dashboard/calendar?year=${year}&month=${month}`
+    )
+
+    const realStickers = data.stickers || []
+
+    if (!USE_MOCK_STICKERS) {
+      setStickers(realStickers)
+      return
     }
-  }, [year, month])
+
+    // 날짜 기준으로 가짜 데이터와 실제 데이터 병합
+    const mergedStickerMap = new Map()
+
+    // 가짜 과거 기록 먼저 저장
+    mockStickers.forEach((sticker) => {
+      mergedStickerMap.set(
+        sticker.date,
+        sticker
+      )
+    })
+
+    // 실제 데이터가 같은 날짜에 있으면 실제 데이터로 덮어쓰기
+    realStickers.forEach((sticker) => {
+      mergedStickerMap.set(
+        sticker.date,
+        sticker
+      )
+    })
+
+    const mergedStickers = Array.from(
+      mergedStickerMap.values()
+    ).sort((a, b) => {
+      return a.date.localeCompare(b.date)
+    })
+
+    console.log('가짜 과거 스티커:', mockStickers)
+    console.log('실제 스티커:', realStickers)
+    console.log('최종 병합 스티커:', mergedStickers)
+
+    setStickers(mergedStickers)
+  } catch (error) {
+    console.error(
+      '대시보드 캘린더 조회 실패:',
+      error
+    )
+
+    // 실제 API가 실패해도 과거 가짜 데이터는 표시
+    if (USE_MOCK_STICKERS) {
+      setStickers(mockStickers)
+
+      setErrorMessage(
+        '오늘의 실제 미션 기록을 불러오지 못했습니다.'
+      )
+    } else {
+      setStickers([])
+
+      setErrorMessage(
+        error.message ||
+          '캘린더 기록을 불러오지 못했습니다.'
+      )
+    }
+  } finally {
+    setIsLoading(false)
+  }
+}, [year, month])
 
   useEffect(() => {
     fetchCalendar()
