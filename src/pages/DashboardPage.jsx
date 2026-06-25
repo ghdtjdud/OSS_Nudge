@@ -17,6 +17,10 @@ export default function DashboardPage() {
     navigate('/')
   }, [navigate])
 
+  const handleGoMyPage = () => {
+  navigate('/mypage')
+}
+
   return (
     <PageLayout>
       <div className="dashboard-page container">
@@ -29,8 +33,9 @@ export default function DashboardPage() {
           <p className="subtitle text-center">자신의 기록을 확인하세요</p>
 
           <div className="dashboard-actions">
-            <Button onClick={handleReturnChat} variant="primary">기존 채팅으로 돌아가기</Button>
+            <Button onClick={handleReturnChat} variant="primary">채팅으로 돌아가기</Button>
             <Button onClick={handleExit} variant="secondary">종료하기</Button>
+            <Button onClick={handleGoMyPage} variant="secondary">마이페이지</Button>
           </div>
         </div>
       </div>
